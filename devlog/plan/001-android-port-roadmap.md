@@ -26,7 +26,10 @@ Status: Complete (Phase 1 承認ゲート確認待ち)
 
 ## Phase 2: プロジェクト基盤構築と GitHub Issue 起票
 
-Status: Not Started
+Status: Done (PR #1 — Issue #1)
+- GitHub Repository `ipogy/bookgen-android` created and initial Phase 1 baseline pushed to `main`.
+- Issues `#1`–`#8` opened with concrete acceptance criteria covering Phases 2–5.
+- Branch `feat/1-scaffold-android-rust-uniffi` scaffolded `rust-core/` (`bookgen-core` + `uniffi-bindgen` v0.32.2) and `app/` (AGP 9.0.1, Kotlin 2.3.20, Compose BOM 2026.03.01, Nav3 1.0.1, Work 2.12.0), passing `cargo test`, `./gradlew testDebugUnitTest assembleDebug`, `scripts/verify_native_libs.py` (16 KiB `arm64-v8a` / `x86_64` ELF check), and `zipalign -c -P 16`.
 
 ## Phase 3: Rust コアロジック層の実装
 

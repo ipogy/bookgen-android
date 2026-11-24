@@ -1,0 +1,3 @@
+-keep class com.bookgen.core.uniffi.** { *; }
+-keep class com.sun.jna.** { *; }
+-dontwarn com.sun.jna.**

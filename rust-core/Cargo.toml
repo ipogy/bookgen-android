@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = [
+    "bookgen-core",
+    "uniffi-bindgen",
+]
+
+[profile.android-jni]
+inherits = "release"
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "unwind"
+strip = "none"
+debug = "line-tables-only"
+
+[profile.android-jni-dev]
+inherits = "dev"
+opt-level = 1
+panic = "unwind"
+debug = "line-tables-only"
