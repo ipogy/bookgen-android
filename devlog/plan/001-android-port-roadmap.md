@@ -33,7 +33,8 @@ Status: Done (PR #1 — Issue #1)
 
 ## Phase 3: Rust コアロジック層の実装
 
-Status: Not Started
+Status: In Progress (Issue #2 Complete; Issues #3–#4 Remaining)
+- Issue #2 (`feat/2-rust-sqlite-fts5-importer`): Bundled SQLite WAL + FTS5 trigram store, per-section edits & revision rollback, incomplete/empty section tracking, and idempotent legacy `app_data.db`/`.adoc`/`.md` importer ([PR devlog](../pr/002-issue2-rust-sqlite-fts5-importer.md)).
 
 ## Phase 4: Kotlin (Jetpack Compose) UI と AI生成エンジンの実装
 
