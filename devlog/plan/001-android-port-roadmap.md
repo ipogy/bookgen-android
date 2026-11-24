@@ -40,9 +40,10 @@ Status: Done (PRs #10, #11, #12 — Issues #2–#4)
 
 ## Phase 4: Kotlin (Jetpack Compose) UI と AI生成エンジンの実装
 
-Status: In Progress (Issues #5–#6 Done; Issue #7 Remaining)
+Status: Done (PRs #13, #14, #15 — Issues #5–#7)
 - Issue #5 (`feat/5-m3-theme-and-screens`): Extracted `design/DESIGN.md`, implemented Material 3 Light/Dark/Sepia themes, Clean Architecture domain/Rust bridge (`RustBookRepository`), reusable AST & editorial badge components, Navigation 3 host, and all 4 screens ([PR devlog](../pr/005-issue5-m3-theme-and-screens.md)).
 - Issue #6 (`feat/6-byok-llm-and-workmanager`): Added `AndroidKeyStore` AES-256-GCM BYOK settings vault & `AiSettingsBottomSheet`, Gemini/OpenRouter SSE streaming client with jittered backoff & JSON repair, context-injected `BookPromptBuilder`, and resumable `BookGenerationWorker` foreground service with notification deep-linking ([PR devlog](../pr/006-issue6-byok-llm-and-workmanager.md)).
+- Issue #7 (`feat/7-regen-reader-and-export-sharing`): Wired chapter/section `RegenerateBottomSheet` with tone presets & custom instructions, persistent `ReaderAppearance` & normalized scroll position, `FileProvider` ShareSheet + SAF export save, and SAF legacy DB/tree importer ([PR devlog](../pr/007-issue7-regen-reader-and-export-sharing.md)).
 
 ## Phase 5: 結合テスト・最適化・仕上げ
 

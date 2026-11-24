@@ -1,7 +1,10 @@
 package com.bookgen.app.ui.screens.library
 
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.bookgen.app.data.storage.LegacySafImporter
 import com.bookgen.app.domain.model.AiSettings
 import com.bookgen.app.domain.model.BookStatus
 import com.bookgen.app.domain.model.BookSummary
@@ -142,10 +145,36 @@ class LibraryViewModel(
 
     fun importLegacyDirectory(path: String) {
         if (path.isBlank()) return
+        runImportTask { repository.importLegacyBookgen(path.trim()) }
+    }
+
+    fun importLegacyFromDocumentUri(context: Context, uri: Uri) {
+        runImportTask {
+            val stagingDir = LegacySafImporter.stageSingleDocument(context, uri)
+            try {
+                repository.importLegacyBookgen(stagingDir.absolutePath)
+            } finally {
+                LegacySafImporter.cleanupStagingDir(stagingDir)
+            }
+        }
+    }
+
+    fun importLegacyFromTreeUri(context: Context, treeUri: Uri) {
+        runImportTask {
+            val stagingDir = LegacySafImporter.stageDocumentTree(context, treeUri)
+            try {
+                repository.importLegacyBookgen(stagingDir.absolutePath)
+            } finally {
+                LegacySafImporter.cleanupStagingDir(stagingDir)
+            }
+        }
+    }
+
+    private fun runImportTask(block: suspend () -> LegacyImportSummary) {
         viewModelScope.launch {
             _uiState.update { it.copy(isImporting = true, importStatusMessage = null, errorMessage = null) }
             try {
-                val report: LegacyImportSummary = repository.importLegacyBookgen(path.trim())
+                val report: LegacyImportSummary = block()
                 val imported = report.dbBooksImported + report.fsBooksImported
                 val summaryMsg = buildString {
                     append("${imported}冊を取り込みました（${report.sectionsImported}節）")

@@ -77,6 +77,7 @@ import com.bookgen.app.domain.model.SectionRecord
 import com.bookgen.app.domain.model.SectionRevision
 import com.bookgen.app.ui.components.AiSettingsBottomSheet
 import com.bookgen.app.ui.components.EditorialCard
+import com.bookgen.app.ui.components.RegenerateBottomSheet
 import com.bookgen.app.ui.components.SectionStatusChip
 import com.bookgen.app.ui.components.WavyProgressTrack
 import com.bookgen.app.ui.theme.BookGenRadius
@@ -132,9 +133,10 @@ fun WorkspaceRoute(
         onDismissSectionEditor = viewModel::closeSectionEditor,
         onSaveSection = viewModel::saveSectionContent,
         onRestoreRevision = viewModel::restoreRevision,
-        onRegenerateSection = { sec ->
-            viewModel.markSectionPendingForRegen(sec.id, "再生成キューに追加")
-        },
+        onRegenerateSection = viewModel::openSectionRegenSheet,
+        onRegenerateChapter = viewModel::openChapterRegenSheet,
+        onDismissRegenSheet = viewModel::dismissRegenSheet,
+        onConfirmRegen = viewModel::confirmPartialRegeneration,
         onStartOrResumePipeline = startWithPermissionCheck,
         onPausePipeline = viewModel::pauseGeneration,
         onOpenApiSettings = viewModel::openApiSettings,
@@ -168,6 +170,9 @@ fun WorkspaceScreen(
     onSaveSection: (String, String, String, MarkupFormat) -> Unit,
     onRestoreRevision: (String, Long) -> Unit,
     onRegenerateSection: (SectionRecord) -> Unit,
+    onRegenerateChapter: (ChapterWithSections) -> Unit,
+    onDismissRegenSheet: () -> Unit,
+    onConfirmRegen: (RegenTarget, String) -> Unit,
     onStartOrResumePipeline: () -> Unit,
     onPausePipeline: () -> Unit,
     onOpenApiSettings: () -> Unit,
@@ -305,6 +310,7 @@ fun WorkspaceScreen(
                     onMoveSectionUp = { secIdx -> onMoveSectionUp(chWithSecs.chapter.id, secIdx) },
                     onMoveSectionDown = { secIdx -> onMoveSectionDown(chWithSecs.chapter.id, secIdx) },
                     onEditSection = onEditSectionClick,
+                    onRegenerateChapter = { onRegenerateChapter(chWithSecs) },
                     onRegenerateSection = onRegenerateSection,
                     onDeleteSection = onDeleteSection,
                 )
@@ -375,6 +381,17 @@ fun WorkspaceScreen(
             onSaveSettings = onSaveAiSettings,
             onClearKeys = onClearAiKeys,
             onDismiss = onDismissApiSettings,
+        )
+    }
+
+    state.regenTarget?.let { target ->
+        RegenerateBottomSheet(
+            targetTitleLabel = target.titleLabel,
+            sectionCount = target.sectionIds.size,
+            onDismiss = onDismissRegenSheet,
+            onConfirmRegenerate = { instruction ->
+                onConfirmRegen(target, instruction)
+            },
         )
     }
 }
@@ -517,6 +534,7 @@ private fun ChapterOutlineCard(
     onMoveSectionUp: (Int) -> Unit,
     onMoveSectionDown: (Int) -> Unit,
     onEditSection: (SectionRecord) -> Unit,
+    onRegenerateChapter: () -> Unit,
     onRegenerateSection: (SectionRecord) -> Unit,
     onDeleteSection: (String) -> Unit,
 ) {
@@ -545,6 +563,9 @@ private fun ChapterOutlineCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+            }
+            IconButton(onClick = onRegenerateChapter) {
+                Icon(Icons.Outlined.AutoFixHigh, contentDescription = "この章を再生成・トーン調整")
             }
             IconButton(enabled = canMoveUp, onClick = onMoveUp) {
                 Icon(Icons.Outlined.ArrowUpward, contentDescription = "章を上へ")

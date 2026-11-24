@@ -1,6 +1,10 @@
 package com.bookgen.app.ui.screens.library
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -88,6 +92,7 @@ fun LibraryRoute(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val themePref by viewModel.themePreference.collectAsStateWithLifecycle()
     val aiSettings by viewModel.aiSettings.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     LibraryScreen(
         state = state,
@@ -100,6 +105,8 @@ fun LibraryRoute(
         onSearchQueryChanged = viewModel::onSearchQueryChanged,
         onDeleteBook = viewModel::deleteBook,
         onImportDirectory = viewModel::importLegacyDirectory,
+        onImportDocumentUri = { uri -> viewModel.importLegacyFromDocumentUri(context, uri) },
+        onImportTreeUri = { uri -> viewModel.importLegacyFromTreeUri(context, uri) },
         onThemeSelected = viewModel::updateThemePreference,
         onSaveAiSettings = viewModel::saveAiSettings,
         onClearAiKeys = viewModel::clearAiKeys,
@@ -121,6 +128,8 @@ fun LibraryScreen(
     onSearchQueryChanged: (String) -> Unit,
     onDeleteBook: (String) -> Unit,
     onImportDirectory: (String) -> Unit,
+    onImportDocumentUri: (Uri) -> Unit = {},
+    onImportTreeUri: (Uri) -> Unit = {},
     onThemeSelected: (ThemePreference) -> Unit,
     onSaveAiSettings: (AiSettings) -> Unit,
     onClearAiKeys: () -> Unit,
@@ -293,6 +302,14 @@ fun LibraryScreen(
             onConfirmPath = { path ->
                 showImportDialog = false
                 onImportDirectory(path)
+            },
+            onPickDocument = { uri ->
+                showImportDialog = false
+                onImportDocumentUri(uri)
+            },
+            onPickTree = { uri ->
+                showImportDialog = false
+                onImportTreeUri(uri)
             },
         )
     }
@@ -590,23 +607,58 @@ private fun LegacyImportDialog(
     isImporting: Boolean,
     onDismiss: () -> Unit,
     onConfirmPath: (String) -> Unit,
+    onPickDocument: (Uri) -> Unit,
+    onPickTree: (Uri) -> Unit,
 ) {
     var dirPath by rememberSaveable { mutableStateOf("") }
+    val docLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) onPickDocument(uri)
+    }
+    val treeLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        if (uri != null) onPickTree(uri)
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Web版 bookgen データ取込") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = "app_data.db や book.json / chapter_*.adoc を含む書籍ディレクトリのパスを指定してください。",
+                    text = "SAF（Android ファイルピッカー）で `books/` フォルダや `app_data.db` を選択するか、パスを直接入力できます。",
                     style = MaterialTheme.typography.bodySmall,
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedButton(
+                        enabled = !isImporting,
+                        onClick = { treeLauncher.launch(null) },
+                        modifier = Modifier.weight(1f),
+                        shape = BookGenRadius.Control,
+                    ) {
+                        Text("フォルダ選択")
+                    }
+                    OutlinedButton(
+                        enabled = !isImporting,
+                        onClick = { docLauncher.launch(arrayOf("*/*")) },
+                        modifier = Modifier.weight(1f),
+                        shape = BookGenRadius.Control,
+                    ) {
+                        Text("DB/原稿選択")
+                    }
+                }
                 OutlinedTextField(
                     value = dirPath,
                     onValueChange = { dirPath = it },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     placeholder = { Text("/sdcard/Download/bookgen/books") },
+                    label = { Text("または直接ディレクトリパス") },
                 )
             }
         },

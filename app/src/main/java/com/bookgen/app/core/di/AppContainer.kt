@@ -55,10 +55,14 @@ class AppContainer(context: Context) {
         )
     }
 
-    private val _themePreference = MutableStateFlow(ThemePreference.SYSTEM)
-    val themePreference: StateFlow<ThemePreference> = _themePreference.asStateFlow()
+    private val _themePreference by lazy {
+        MutableStateFlow(settingsRepository.getThemePreference())
+    }
+    val themePreference: StateFlow<ThemePreference>
+        get() = _themePreference.asStateFlow()
 
     fun setThemePreference(preference: ThemePreference) {
+        settingsRepository.setThemePreference(preference)
         _themePreference.value = preference
     }
 

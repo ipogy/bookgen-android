@@ -4,6 +4,9 @@ import android.content.SharedPreferences
 import com.bookgen.app.data.security.SecretCipher
 import com.bookgen.app.domain.model.AiSettings
 import com.bookgen.app.domain.model.MarkupFormat
+import com.bookgen.app.domain.model.ReaderAppearance
+import com.bookgen.app.domain.model.ReaderFontChoice
+import com.bookgen.app.domain.model.ThemePreference
 import com.bookgen.app.domain.repository.SettingsRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -67,6 +70,49 @@ class SecureSettingsRepository(
         prefs.edit().putString("$KEY_BOOK_FORMAT_PREFIX$bookId", format.name).apply()
     }
 
+    override fun getThemePreference(): ThemePreference {
+        val raw = prefs.getString(KEY_THEME_PREF, null) ?: return ThemePreference.SYSTEM
+        return runCatching { ThemePreference.valueOf(raw) }.getOrDefault(ThemePreference.SYSTEM)
+    }
+
+    override fun setThemePreference(preference: ThemePreference) {
+        prefs.edit().putString(KEY_THEME_PREF, preference.name).apply()
+    }
+
+    override fun getReaderAppearance(): ReaderAppearance {
+        val themeRaw = prefs.getString(KEY_READER_THEME, null)
+        val theme = themeRaw?.let { runCatching { ThemePreference.valueOf(it) }.getOrNull() }
+            ?.takeIf { it != ThemePreference.SYSTEM }
+            ?: when (getThemePreference()) {
+                ThemePreference.DARK -> ThemePreference.DARK
+                ThemePreference.SEPIA -> ThemePreference.SEPIA
+                ThemePreference.LIGHT, ThemePreference.SYSTEM -> ThemePreference.LIGHT
+            }
+        val fontRaw = prefs.getString(KEY_READER_FONT, null)
+        val font = fontRaw?.let { runCatching { ReaderFontChoice.valueOf(it) }.getOrNull() }
+            ?: ReaderFontChoice.SERIF
+        val sizeSp = prefs.getFloat(KEY_READER_FONT_SIZE, 17f).coerceIn(14f, 24f)
+        val lineHeight = prefs.getFloat(KEY_READER_LINE_HEIGHT, 1.75f).coerceIn(1.4f, 2.1f)
+        val paddingDp = prefs.getInt(KEY_READER_PADDING_DP, 20).coerceIn(12, 36)
+        return ReaderAppearance(
+            theme = theme,
+            fontChoice = font,
+            fontSizeSp = sizeSp,
+            lineHeightMultiplier = lineHeight,
+            horizontalPaddingDp = paddingDp,
+        )
+    }
+
+    override fun setReaderAppearance(appearance: ReaderAppearance) {
+        prefs.edit()
+            .putString(KEY_READER_THEME, appearance.theme.name)
+            .putString(KEY_READER_FONT, appearance.fontChoice.name)
+            .putFloat(KEY_READER_FONT_SIZE, appearance.fontSizeSp.coerceIn(14f, 24f))
+            .putFloat(KEY_READER_LINE_HEIGHT, appearance.lineHeightMultiplier.coerceIn(1.4f, 2.1f))
+            .putInt(KEY_READER_PADDING_DP, appearance.horizontalPaddingDp.coerceIn(12, 36))
+            .apply()
+    }
+
     private fun readSnapshot(): AiSettings {
         val gemini = safeDecrypt(prefs.getString(KEY_ENC_GEMINI, null))
         val openRouter = safeDecrypt(prefs.getString(KEY_ENC_OPENROUTER, null))
@@ -99,5 +145,11 @@ class SecureSettingsRepository(
         const val KEY_OPENROUTER_PROVIDERS = "openrouter_providers"
         const val KEY_MAX_CONCURRENCY = "max_concurrency"
         const val KEY_BOOK_FORMAT_PREFIX = "book_format_"
+        const val KEY_THEME_PREF = "app_theme_pref"
+        const val KEY_READER_THEME = "reader_theme"
+        const val KEY_READER_FONT = "reader_font"
+        const val KEY_READER_FONT_SIZE = "reader_font_size"
+        const val KEY_READER_LINE_HEIGHT = "reader_line_height"
+        const val KEY_READER_PADDING_DP = "reader_padding_dp"
     }
 }
