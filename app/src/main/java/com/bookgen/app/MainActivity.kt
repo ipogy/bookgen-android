@@ -1,57 +1,49 @@
 package com.bookgen.app
 
+import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import com.bookgen.core.uniffi.coreHealthCheck
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bookgen.app.ui.navigation.BookGenApp
+import com.bookgen.app.ui.theme.BookGenTheme
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        const val EXTRA_BOOK_ID = "com.bookgen.app.EXTRA_BOOK_ID"
+    }
+
+    private var initialBookIdState by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
         super.onCreate(savedInstanceState)
+
+        initialBookIdState = intent?.getStringExtra(EXTRA_BOOK_ID)
+        val container = (application as BookGenApplication).container
+
         setContent {
-            MaterialTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    BootstrapGreeting(modifier = Modifier.padding(innerPadding))
-                }
+            val themePreference by container.themePreference.collectAsStateWithLifecycle()
+            BookGenTheme(preference = themePreference) {
+                BookGenApp(
+                    container = container,
+                    initialBookId = initialBookIdState,
+                )
             }
         }
     }
-}
 
-@Composable
-private fun BootstrapGreeting(modifier: Modifier = Modifier) {
-    val statusText = remember {
-        runCatching {
-            val health = coreHealthCheck("android-bootstrap")
-            "${health.engineName} v${health.crateVersion}: ${health.echoNote}"
-        }.getOrElse { err ->
-            "Rust Core init error: ${err.message}"
-        }
-    }
-    Column(
-        modifier = modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(
-            text = "Co-Author Studio",
-            style = MaterialTheme.typography.headlineMedium
-        )
-        Text(
-            text = statusText,
-            style = MaterialTheme.typography.bodyLarge
-        )
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        initialBookIdState = intent.getStringExtra(EXTRA_BOOK_ID)
     }
 }
