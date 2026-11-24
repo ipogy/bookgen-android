@@ -268,7 +268,7 @@ fun WorkspaceScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            item(key = "pipeline_status") {
+            item(key = "pipeline_status", contentType = "pipeline_status") {
                 if (summary != null) {
                     PipelineStatusCard(
                         completed = summary.completedSections,
@@ -283,7 +283,7 @@ fun WorkspaceScreen(
                 }
             }
 
-            item(key = "live_stream_drawer") {
+            item(key = "live_stream_drawer", contentType = "live_stream_drawer") {
                 LiveStreamConsoleDrawer(
                     expanded = state.streamDrawerExpanded,
                     activeLabel = state.activeWritingLabel,
@@ -295,6 +295,7 @@ fun WorkspaceScreen(
             itemsIndexed(
                 items = chapters,
                 key = { _, item -> item.chapter.id },
+                contentType = { _, _ -> "chapter_card" },
             ) { index, chWithSecs ->
                 val isExpanded = chWithSecs.chapter.id in state.expandedChapterIds
                 ChapterOutlineCard(

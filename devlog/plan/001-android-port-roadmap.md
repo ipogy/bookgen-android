@@ -47,7 +47,8 @@ Status: Done (PRs #13, #14, #15 — Issues #5–#7)
 
 ## Phase 5: 結合テスト・最適化・仕上げ
 
-Status: Not Started
+Status: Done (PR #16 — Issue #8)
+- Issue #8 (`chore/8-audit-tests-and-docs`): Audited UniFFI packaging (`uniffiEnsureInitialized()` startup check, `panic="unwind"` on `aarch64-linux-android`), Rust FFI safety (`0` production `unsafe`/`unwrap`/`panic!`), and Jetpack Compose performance (`drawWithCache` + `Path.rewind()` on `WavyProgressTrack`, `contentType` across all `LazyColumn`s, zero `Pair` allocation in `ReaderScreen`); added `WizardViewModelTest` & `BookGenComposeUiTest`, plus `README.md` and `CHANGELOG.md` ([PR devlog](../pr/008-issue8-audit-tests-and-docs.md)).
 
 ## Findings
 

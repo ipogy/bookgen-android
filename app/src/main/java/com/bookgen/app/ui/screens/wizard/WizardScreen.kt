@@ -200,7 +200,7 @@ fun WizardScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item(key = "theme_card") {
+            item(key = "theme_card", contentType = "theme_card") {
                 EditorialCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = "書籍のテーマ・企画メモ",
@@ -240,7 +240,7 @@ fun WizardScreen(
                 }
             }
 
-            item(key = "genre_section") {
+            item(key = "genre_section", contentType = "genre_section") {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
                         text = "ジャンル判定",
@@ -293,7 +293,7 @@ fun WizardScreen(
                 }
             }
 
-            item(key = "params_card") {
+            item(key = "params_card", contentType = "params_card") {
                 EditorialCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = "構成テンプレート・執筆パラメータ",
