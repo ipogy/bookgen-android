@@ -871,8 +871,17 @@ pub(crate) fn query_search(
     // SQLite trigram FTS5 requires >= 3 characters per indexed token.
     // Split tokens: if all non-empty tokens have >= 3 chars, use FTS5 trigram + bm25 + snippet;
     // otherwise fall back to safe escaped LIKE query with Rust snippet extraction.
-    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
-    let can_use_fts = !tokens.is_empty() && tokens.iter().all(|t| t.chars().count() >= 3);
+    let tokens: Vec<&str> = trimmed
+        .split_whitespace()
+        .map(|t| t.trim_matches('"'))
+        .filter(|t| !t.is_empty())
+        .collect();
+    if tokens.is_empty() {
+        return Err(BookGenError::invalid_input(
+            "search query must contain searchable text",
+        ));
+    }
+    let can_use_fts = tokens.iter().all(|t| t.chars().count() >= 3);
 
     if can_use_fts {
         let fts_expr = tokens

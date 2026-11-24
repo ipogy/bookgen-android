@@ -112,3 +112,44 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct PanicOnDrop;
+
+    impl Drop for PanicOnDrop {
+        #[expect(
+            clippy::panic,
+            reason = "simulates panicking payload destructor during unwind disposal"
+        )]
+        fn drop(&mut self) {
+            panic!("destructor boom");
+        }
+    }
+
+    #[test]
+    #[expect(clippy::panic, reason = "verifies guard_ffi catches unwinds cleanly")]
+    fn guard_ffi_catches_panic_without_leaking_payload_and_survives_drop_panic() {
+        let prev_hook = panic::take_hook();
+        panic::set_hook(Box::new(|_| {}));
+
+        let secret_res: Result<(), BookGenError> = guard_ffi("test_secret_panic", || {
+            panic!("TOP_SECRET_API_KEY_12345");
+        });
+        assert_eq!(
+            secret_res,
+            Err(BookGenError::InternalPanic {
+                detail: "internal panic during test_secret_panic".to_string()
+            })
+        );
+
+        let drop_res: Result<(), BookGenError> = guard_ffi("test_drop_panic", || {
+            panic::panic_any(PanicOnDrop);
+        });
+        assert!(matches!(drop_res, Err(BookGenError::InternalPanic { .. })));
+
+        panic::set_hook(prev_hook);
+    }
+}

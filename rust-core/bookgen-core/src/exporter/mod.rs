@@ -632,4 +632,232 @@ mod tests {
         assert_eq!(fs::read(&existing)?, b"previous");
         Ok(())
     }
+
+    struct MidCancelListener {
+        exporter: Arc<BookExporter>,
+        cancel_on_stage: ProgressStage,
+    }
+
+    impl ExportProgressListener for MidCancelListener {
+        fn on_progress(&self, event: ProgressEvent) -> Result<(), ProgressCallbackError> {
+            if event.stage == self.cancel_on_stage {
+                self.exporter.cancel_job(event.job_id);
+            }
+            Ok(())
+        }
+    }
+
+    struct FailingListener;
+
+    impl ExportProgressListener for FailingListener {
+        fn on_progress(&self, _event: ProgressEvent) -> Result<(), ProgressCallbackError> {
+            Err(ProgressCallbackError::Failed)
+        }
+    }
+
+    #[test]
+    fn mid_export_cancel_and_listener_failure_leave_no_temp_files(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let temp = TempDir::new()?;
+        let (store, book_id) = seed_test_book()?;
+        // Add 2 more chapters so checkpoint fires during Processing
+        for ch_title in ["Ch2", "Ch3"] {
+            let ch = store.add_chapter(book_id.clone(), ch_title.to_string(), String::new())?;
+            let sec = store.add_section(ch.chapter.id, "Body".to_string(), String::new())?;
+            store.upsert_section_content(
+                sec.id,
+                "Long paragraph line for chapter processing.".to_string(),
+                MarkupFormat::Markdown,
+                String::new(),
+                String::new(),
+            )?;
+        }
+
+        let exporter = BookExporter::new();
+        let target_cancel = temp.path().join("mid_cancel.epub");
+        exporter.reserve_job("job-mid".to_string())?;
+        let cancel_res = exporter.export_book(
+            Arc::clone(&store),
+            ExportRequest {
+                job_id: "job-mid".to_string(),
+                book_id: book_id.clone(),
+                format: ExportFormat::Epub,
+                output_path: target_cancel.to_string_lossy().to_string(),
+                include_toc: true,
+                include_incomplete_notice: false,
+            },
+            Some(Arc::new(MidCancelListener {
+                exporter: Arc::clone(&exporter),
+                cancel_on_stage: ProgressStage::Processing,
+            })),
+        );
+        assert!(matches!(cancel_res, Err(BookGenError::Cancelled)));
+        assert!(!target_cancel.exists());
+
+        // Listener error aborts cleanly without leaving partial files behind
+        let target_fail = temp.path().join("listener_fail.pdf");
+        let fail_res = exporter.export_book(
+            store,
+            ExportRequest {
+                job_id: "job-fail".to_string(),
+                book_id,
+                format: ExportFormat::Pdf,
+                output_path: target_fail.to_string_lossy().to_string(),
+                include_toc: false,
+                include_incomplete_notice: false,
+            },
+            Some(Arc::new(FailingListener)),
+        );
+        assert!(matches!(fail_res, Err(BookGenError::Export { .. })));
+        assert!(!target_fail.exists());
+
+        // Verify zero leftover `.part` temp files in output directory
+        let remaining_entries = fs::read_dir(temp.path())?.count();
+        assert_eq!(remaining_entries, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn golden_determinism_and_multipage_pdf_rendering() -> Result<(), Box<dyn std::error::Error>> {
+        let temp = TempDir::new()?;
+        let (store, book_id) = seed_test_book()?;
+        // Fill enough Japanese & code blocks to span multiple PDF pages
+        let ch2 = store.add_chapter(
+            book_id.clone(),
+            "第2章 マルチページPDFの検証".to_string(),
+            "Pagination".to_string(),
+        )?;
+        let sec = store.add_section(ch2.chapter.id, "長文セクション".to_string(), String::new())?;
+        let long_body = (1..=65)
+            .map(|i| {
+                format!(
+                    "段落 {i}: 日本語テキストとASCIIコードブロックの改行・折り返し処理および複数ページへの分割出力を確認します。"
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        store.upsert_section_content(
+            sec.id,
+            long_body,
+            MarkupFormat::Markdown,
+            "ai_generate".to_string(),
+            String::new(),
+        )?;
+
+        let exporter = BookExporter::new();
+        let md_a = temp.path().join("det_a.md");
+        let md_b = temp.path().join("det_b.md");
+        exporter.export_book(
+            Arc::clone(&store),
+            ExportRequest {
+                job_id: "det-a".to_string(),
+                book_id: book_id.clone(),
+                format: ExportFormat::Markdown,
+                output_path: md_a.to_string_lossy().to_string(),
+                include_toc: true,
+                include_incomplete_notice: true,
+            },
+            None,
+        )?;
+        let rec = Arc::new(RecordingListener {
+            events: Mutex::new(Vec::new()),
+        });
+        exporter.export_book(
+            Arc::clone(&store),
+            ExportRequest {
+                job_id: "det-b".to_string(),
+                book_id: book_id.clone(),
+                format: ExportFormat::Markdown,
+                output_path: md_b.to_string_lossy().to_string(),
+                include_toc: true,
+                include_incomplete_notice: true,
+            },
+            Some(rec.clone()),
+        )?;
+        assert_eq!(fs::read(&md_a)?, fs::read(&md_b)?);
+
+        // Verify monotonic progress fractions
+        let recorded = rec.events.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut prev_frac = -1.0_f64;
+        for ev in recorded.iter() {
+            assert!((0.0..=1.0).contains(&ev.fraction));
+            assert!(ev.fraction >= prev_frac);
+            prev_frac = ev.fraction;
+        }
+        assert_eq!(
+            recorded.first().ok_or("first")?.stage,
+            ProgressStage::Validating
+        );
+        assert_eq!(recorded.last().ok_or("last")?.stage, ProgressStage::Done);
+
+        // Multi-page PDF check
+        let pdf_path = temp.path().join("multi.pdf");
+        exporter.export_book(
+            store,
+            ExportRequest {
+                job_id: "multi-pdf".to_string(),
+                book_id,
+                format: ExportFormat::Pdf,
+                output_path: pdf_path.to_string_lossy().to_string(),
+                include_toc: true,
+                include_incomplete_notice: true,
+            },
+            None,
+        )?;
+        let pdf_bytes = fs::read(&pdf_path)?;
+        let pdf_raw = String::from_utf8_lossy(&pdf_bytes);
+        assert!(pdf_raw.contains("2 / "));
+        assert!(pdf_raw.contains("%%EOF"));
+
+        Ok(())
+    }
+
+    #[test]
+    #[expect(clippy::panic, reason = "tests registry poison recovery in cancel_job")]
+    fn job_registry_bounds_capacity_rejects_invalid_ids_and_recovers_poison(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let exporter = BookExporter::new();
+        assert!(matches!(
+            exporter.reserve_job(String::new()),
+            Err(BookGenError::InvalidInput { .. })
+        ));
+        assert!(matches!(
+            exporter.reserve_job("x".repeat(MAX_JOB_ID_BYTES + 1)),
+            Err(BookGenError::InvalidInput { .. })
+        ));
+
+        for i in 0..MAX_ACTIVE_JOBS {
+            exporter.reserve_job(format!("slot-{i}"))?;
+        }
+        assert!(matches!(
+            exporter.reserve_job("overflow".to_string()),
+            Err(BookGenError::Conflict { .. })
+        ));
+        // Duplicate id rejected
+        assert!(matches!(
+            exporter.reserve_job("slot-0".to_string()),
+            Err(BookGenError::Conflict { .. })
+        ));
+
+        // Poison the registry lock on a scoped thread
+        let prev_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let _ = std::thread::scope(|s| {
+            let exp_ref = &exporter;
+            s.spawn(move || {
+                let _guard = exp_ref.registry.entries.lock();
+                panic!("simulated panic while holding registry lock");
+            })
+            .join()
+        });
+        std::panic::set_hook(prev_hook);
+
+        // Non-throwing cancel_job must NEVER panic on poisoned lock; reserve_job fails closed cleanly.
+        exporter.cancel_job("slot-0".to_string());
+        assert!(matches!(
+            exporter.reserve_job("after-poison".to_string()),
+            Err(BookGenError::Storage { .. })
+        ));
+        Ok(())
+    }
 }
