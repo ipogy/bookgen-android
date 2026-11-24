@@ -40,7 +40,8 @@ Status: Done (PRs #10, #11, #12 — Issues #2–#4)
 
 ## Phase 4: Kotlin (Jetpack Compose) UI と AI生成エンジンの実装
 
-Status: Not Started
+Status: In Progress (Issue #5 Done; Issues #6–#7 Remaining)
+- Issue #5 (`feat/5-m3-theme-and-screens`): Extracted `design/DESIGN.md`, implemented Material 3 Light/Dark/Sepia themes, Clean Architecture domain/Rust bridge (`RustBookRepository`), reusable AST & editorial badge components, Navigation 3 host, and all 4 screens ([PR devlog](../pr/005-issue5-m3-theme-and-screens.md)).
 
 ## Phase 5: 結合テスト・最適化・仕上げ
 
