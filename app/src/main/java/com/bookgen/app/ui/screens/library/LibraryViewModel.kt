@@ -2,12 +2,14 @@ package com.bookgen.app.ui.screens.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.bookgen.app.domain.model.AiSettings
 import com.bookgen.app.domain.model.BookStatus
 import com.bookgen.app.domain.model.BookSummary
 import com.bookgen.app.domain.model.LegacyImportSummary
 import com.bookgen.app.domain.model.SearchHit
 import com.bookgen.app.domain.model.ThemePreference
 import com.bookgen.app.domain.repository.BookRepository
+import com.bookgen.app.domain.repository.SettingsRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -40,9 +42,12 @@ data class LibraryUiState(
 
 class LibraryViewModel(
     private val repository: BookRepository,
+    private val settingsRepository: SettingsRepository,
     val themePreference: StateFlow<ThemePreference>,
     private val onThemeChange: (ThemePreference) -> Unit,
 ) : ViewModel() {
+
+    val aiSettings: StateFlow<AiSettings> = settingsRepository.aiSettings
 
     private val _uiState = MutableStateFlow(LibraryUiState())
     val uiState: StateFlow<LibraryUiState> = _uiState.asStateFlow()
@@ -167,6 +172,27 @@ class LibraryViewModel(
 
     fun updateThemePreference(preference: ThemePreference) {
         onThemeChange(preference)
+    }
+
+    fun saveAiSettings(settings: AiSettings) {
+        viewModelScope.launch {
+            runCatching { settingsRepository.updateAiSettings(settings) }
+                .onSuccess {
+                    _uiState.update { it.copy(importStatusMessage = "AI設定とAPIキーを暗号化保存しました") }
+                }
+                .onFailure { e ->
+                    _uiState.update { it.copy(errorMessage = e.message ?: "設定の保存に失敗しました") }
+                }
+        }
+    }
+
+    fun clearAiKeys() {
+        viewModelScope.launch {
+            runCatching { settingsRepository.clearApiKeys() }
+                .onSuccess {
+                    _uiState.update { it.copy(importStatusMessage = "APIキーを削除しました") }
+                }
+        }
     }
 
     fun clearBannerMessages() {

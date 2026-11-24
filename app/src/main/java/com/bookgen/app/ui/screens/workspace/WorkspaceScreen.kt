@@ -1,5 +1,10 @@
 package com.bookgen.app.ui.screens.workspace
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -29,8 +34,10 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -58,13 +65,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bookgen.app.domain.model.AiSettings
 import com.bookgen.app.domain.model.ChapterWithSections
 import com.bookgen.app.domain.model.MarkupFormat
 import com.bookgen.app.domain.model.SectionRecord
 import com.bookgen.app.domain.model.SectionRevision
+import com.bookgen.app.ui.components.AiSettingsBottomSheet
 import com.bookgen.app.ui.components.EditorialCard
 import com.bookgen.app.ui.components.SectionStatusChip
 import com.bookgen.app.ui.components.WavyProgressTrack
@@ -79,13 +90,32 @@ fun WorkspaceRoute(
     viewModel: WorkspaceViewModel,
     onBack: () -> Unit,
     onOpenReader: () -> Unit,
-    onStartGeneration: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val aiSettings by viewModel.aiSettings.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    val notifPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { _ ->
+        viewModel.startOrResumeGeneration()
+    }
+
+    val startWithPermissionCheck = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            viewModel.startOrResumeGeneration()
+        }
+    }
 
     WorkspaceScreen(
         state = state,
+        aiSettings = aiSettings,
         onBack = onBack,
         onOpenReader = onOpenReader,
         onToggleChapter = viewModel::toggleChapterExpanded,
@@ -105,7 +135,12 @@ fun WorkspaceRoute(
         onRegenerateSection = { sec ->
             viewModel.markSectionPendingForRegen(sec.id, "再生成キューに追加")
         },
-        onStartOrResumePipeline = onStartGeneration,
+        onStartOrResumePipeline = startWithPermissionCheck,
+        onPausePipeline = viewModel::pauseGeneration,
+        onOpenApiSettings = viewModel::openApiSettings,
+        onDismissApiSettings = viewModel::dismissApiSettings,
+        onSaveAiSettings = viewModel::saveAiSettings,
+        onClearAiKeys = viewModel::clearAiKeys,
         onDismissSnackbar = viewModel::clearSnackbar,
         modifier = modifier,
     )
@@ -115,6 +150,7 @@ fun WorkspaceRoute(
 @Composable
 fun WorkspaceScreen(
     state: WorkspaceUiState,
+    aiSettings: AiSettings,
     onBack: () -> Unit,
     onOpenReader: () -> Unit,
     onToggleChapter: (String) -> Unit,
@@ -133,6 +169,11 @@ fun WorkspaceScreen(
     onRestoreRevision: (String, Long) -> Unit,
     onRegenerateSection: (SectionRecord) -> Unit,
     onStartOrResumePipeline: () -> Unit,
+    onPausePipeline: () -> Unit,
+    onOpenApiSettings: () -> Unit,
+    onDismissApiSettings: () -> Unit,
+    onSaveAiSettings: (AiSettings) -> Unit,
+    onClearAiKeys: () -> Unit,
     onDismissSnackbar: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -172,6 +213,12 @@ fun WorkspaceScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onOpenApiSettings) {
+                        Icon(
+                            imageVector = Icons.Outlined.Tune,
+                            contentDescription = "AIモデル・キー設定",
+                        )
+                    }
                     IconButton(onClick = { showAddChapterDialog = true }) {
                         Icon(
                             imageVector = Icons.Outlined.Add,
@@ -225,6 +272,7 @@ fun WorkspaceScreen(
                         progressFraction = summary.progressFraction,
                         isGenerating = state.isGenerating,
                         onStartOrResume = onStartOrResumePipeline,
+                        onPausePipeline = onPausePipeline,
                         onOpenReader = onOpenReader,
                     )
                 }
@@ -320,6 +368,15 @@ fun WorkspaceScreen(
             onRestoreRevision = { revId -> onRestoreRevision(section.id, revId) },
         )
     }
+
+    if (state.showApiSettingsSheet) {
+        AiSettingsBottomSheet(
+            currentSettings = aiSettings,
+            onSaveSettings = onSaveAiSettings,
+            onClearKeys = onClearAiKeys,
+            onDismiss = onDismissApiSettings,
+        )
+    }
 }
 
 @Composable
@@ -330,6 +387,7 @@ private fun PipelineStatusCard(
     progressFraction: Float,
     isGenerating: Boolean,
     onStartOrResume: () -> Unit,
+    onPausePipeline: () -> Unit,
     onOpenReader: () -> Unit,
 ) {
     val pct = (progressFraction * 100f).toInt()
@@ -347,7 +405,7 @@ private fun PipelineStatusCard(
                 style = MaterialTheme.typography.titleSmall,
             )
             Text(
-                text = if (incompleteCount > 0) "残り${incompleteCount}節" else "全節完了",
+                text = if (isGenerating) "執筆実行中" else if (incompleteCount > 0) "残り${incompleteCount}節" else "全節完了",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.tertiary,
             )
@@ -359,25 +417,35 @@ private fun PipelineStatusCard(
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "バックグラウンド実行対応・画面を閉じても進捗と各節の状態を保持",
+            text = "WorkManager バックグラウンド実行対応・画面を閉じても進捗と各節の状態を保持",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button(
-                onClick = onStartOrResume,
-                shape = BookGenRadius.Control,
-            ) {
-                Icon(Icons.Outlined.PlayArrow, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    when {
-                        isGenerating -> "執筆状況を確認"
-                        incompleteCount > 0 -> "残りの${incompleteCount}節を執筆"
-                        else -> "AIで全体を再調整"
-                    },
-                )
+            if (isGenerating) {
+                OutlinedButton(
+                    onClick = onPausePipeline,
+                    shape = BookGenRadius.Control,
+                ) {
+                    Icon(Icons.Outlined.Pause, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("一時停止")
+                }
+            } else {
+                Button(
+                    onClick = onStartOrResume,
+                    shape = BookGenRadius.Control,
+                ) {
+                    Icon(Icons.Outlined.PlayArrow, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        when {
+                            incompleteCount > 0 -> "残りの${incompleteCount}節を執筆"
+                            else -> "未完了節をチェック"
+                        },
+                    )
+                }
             }
             OutlinedButton(
                 onClick = onOpenReader,

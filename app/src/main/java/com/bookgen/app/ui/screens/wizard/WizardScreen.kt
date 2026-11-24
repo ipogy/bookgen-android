@@ -30,17 +30,24 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bookgen.app.domain.model.AiSettings
 import com.bookgen.app.domain.model.GenreInfo
 import com.bookgen.app.domain.model.MarkupFormat
+import com.bookgen.app.ui.components.AiSettingsBottomSheet
 import com.bookgen.app.ui.components.EditorialCard
 import com.bookgen.app.ui.components.GenreBadge
 import com.bookgen.app.ui.theme.BookGenRadius
@@ -62,9 +69,11 @@ fun WizardRoute(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val aiSettings by viewModel.aiSettings.collectAsStateWithLifecycle()
 
     WizardScreen(
         state = state,
+        aiSettings = aiSettings,
         onBack = onBack,
         onThemeChanged = viewModel::onThemeChanged,
         onTitleChanged = viewModel::onTitleChanged,
@@ -76,6 +85,9 @@ fun WizardRoute(
         onSectionsPerChapterChanged = viewModel::onSectionsPerChapterChanged,
         onFormatSelected = viewModel::onFormatSelected,
         onToneSelected = viewModel::onToneSelected,
+        onToggleUseAiOutline = viewModel::onToggleUseAiOutline,
+        onSaveAiSettings = viewModel::saveAiSettings,
+        onClearAiKeys = viewModel::clearAiKeys,
         onSubmit = { viewModel.createPlannedBook(onBookCreated) },
         modifier = modifier,
     )
@@ -85,6 +97,7 @@ fun WizardRoute(
 @Composable
 fun WizardScreen(
     state: WizardUiState,
+    aiSettings: AiSettings,
     onBack: () -> Unit,
     onThemeChanged: (String) -> Unit,
     onTitleChanged: (String) -> Unit,
@@ -96,9 +109,13 @@ fun WizardScreen(
     onSectionsPerChapterChanged: (Int) -> Unit,
     onFormatSelected: (MarkupFormat) -> Unit,
     onToneSelected: (String) -> Unit,
+    onToggleUseAiOutline: (Boolean) -> Unit,
+    onSaveAiSettings: (AiSettings) -> Unit,
+    onClearAiKeys: () -> Unit,
     onSubmit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var showSettingsSheet by rememberSaveable { mutableStateOf(false) }
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
@@ -363,8 +380,52 @@ fun WizardScreen(
                         singleLine = true,
                         label = { Text("想定読者") },
                     )
+
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider(color = BookGenThemeExtras.colors.borderSubtle)
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "AIで構成案を詳細企画する",
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            Text(
+                                text = if (state.hasPlannerKey) {
+                                    "モデル (${aiSettings.plannerModel}) で目次JSONを立案します"
+                                } else {
+                                    "APIキー未設定のためローカル骨組みを作成（後から執筆可能）"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = state.useAiOutline && state.hasPlannerKey,
+                            enabled = state.hasPlannerKey,
+                            onCheckedChange = onToggleUseAiOutline,
+                        )
+                    }
+                    if (!state.hasPlannerKey) {
+                        TextButton(onClick = { showSettingsSheet = true }) {
+                            Text("APIキーを設定してAI自動企画を使う")
+                        }
+                    }
                 }
             }
         }
+    }
+
+    if (showSettingsSheet) {
+        AiSettingsBottomSheet(
+            currentSettings = aiSettings,
+            onSaveSettings = onSaveAiSettings,
+            onClearKeys = onClearAiKeys,
+            onDismiss = { showSettingsSheet = false },
+        )
     }
 }

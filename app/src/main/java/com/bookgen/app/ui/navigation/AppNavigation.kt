@@ -104,6 +104,7 @@ fun BookGenApp(
                 ) {
                     LibraryViewModel(
                         repository = container.bookRepository,
+                        settingsRepository = container.settingsRepository,
                         themePreference = container.themePreference,
                         onThemeChange = container::setThemePreference,
                     )
@@ -133,6 +134,8 @@ fun BookGenApp(
                 ) {
                     WizardViewModel(
                         repository = container.bookRepository,
+                        settingsRepository = container.settingsRepository,
+                        generationPipeline = container.generationPipeline,
                     )
                 }
                 WizardRoute(
@@ -153,6 +156,16 @@ fun BookGenApp(
                     WorkspaceViewModel(
                         bookId = key.bookId,
                         repository = container.bookRepository,
+                        settingsRepository = container.settingsRepository,
+                        progressBus = container.progressBus,
+                        isWorkRunningFlow = container.observeGenerationRunning(key.bookId),
+                        onStartWork = { targetBookId, formatOverride ->
+                            container.startBookGeneration(
+                                bookId = targetBookId,
+                                markupFormatOverride = formatOverride,
+                            )
+                        },
+                        onCancelWork = container::cancelBookGeneration,
                     )
                 }
                 WorkspaceRoute(
