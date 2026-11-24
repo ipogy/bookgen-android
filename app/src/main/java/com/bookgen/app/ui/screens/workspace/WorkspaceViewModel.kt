@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.bookgen.app.data.pipeline.GenerationProgressBus
 import com.bookgen.app.domain.model.AiSettings
 import com.bookgen.app.domain.model.BookDetail
+import com.bookgen.app.domain.model.ChapterWithSections
 import com.bookgen.app.domain.model.IncompleteSection
 import com.bookgen.app.domain.model.MarkupFormat
 import com.bookgen.app.domain.model.SectionRecord
@@ -22,6 +23,11 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+data class RegenTarget(
+    val titleLabel: String,
+    val sectionIds: List<String>,
+)
+
 data class WorkspaceUiState(
     val isLoading: Boolean = true,
     val detail: BookDetail? = null,
@@ -33,6 +39,7 @@ data class WorkspaceUiState(
     val streamDrawerExpanded: Boolean = false,
     val editingSection: SectionRecord? = null,
     val editingRevisions: List<SectionRevision> = emptyList(),
+    val regenTarget: RegenTarget? = null,
     val showApiSettingsSheet: Boolean = false,
     val snackbarMessage: String? = null,
 )
@@ -43,7 +50,12 @@ class WorkspaceViewModel(
     private val settingsRepository: SettingsRepository,
     private val progressBus: GenerationProgressBus,
     private val isWorkRunningFlow: Flow<Boolean>,
-    private val onStartWork: (bookId: String, formatOverride: MarkupFormat?) -> Unit,
+    private val onStartWork: (
+        bookId: String,
+        formatOverride: MarkupFormat?,
+        targetSectionIds: List<String>?,
+        customInstruction: String?,
+    ) -> Unit,
     private val onCancelWork: (bookId: String) -> Unit,
 ) : ViewModel() {
 
@@ -254,6 +266,69 @@ class WorkspaceViewModel(
         }
     }
 
+    fun openSectionRegenSheet(section: SectionRecord) {
+        _uiState.update {
+            it.copy(
+                regenTarget = RegenTarget(
+                    titleLabel = "第${section.chapterNumber}章.${section.sectionNumber} ${section.title}",
+                    sectionIds = listOf(section.id),
+                ),
+            )
+        }
+    }
+
+    fun openChapterRegenSheet(chapterWithSections: ChapterWithSections) {
+        val ids = chapterWithSections.sections.map { it.id }
+        if (ids.isEmpty()) {
+            _uiState.update { it.copy(snackbarMessage = "この章には再生成対象の節がありません") }
+            return
+        }
+        _uiState.update {
+            it.copy(
+                regenTarget = RegenTarget(
+                    titleLabel = "第${chapterWithSections.chapter.chapterNumber}章「${chapterWithSections.chapter.title}」全体",
+                    sectionIds = ids,
+                ),
+            )
+        }
+    }
+
+    fun dismissRegenSheet() {
+        _uiState.update { it.copy(regenTarget = null) }
+    }
+
+    fun confirmPartialRegeneration(target: RegenTarget, instruction: String) {
+        val settings = settingsRepository.aiSettings.value
+        if (!settings.hasKeyForModel(settings.writerModel)) {
+            _uiState.update {
+                it.copy(
+                    regenTarget = null,
+                    showApiSettingsSheet = true,
+                    snackbarMessage = "部分再生成を実行するには API キーの設定が必要です",
+                )
+            }
+            return
+        }
+        viewModelScope.launch {
+            runCatching {
+                target.sectionIds.forEach { secId ->
+                    repository.setSectionStatus(secId, SectionStatus.PENDING, "部分再生成: ${instruction.take(48)}")
+                }
+            }
+            val preferredFormat = settingsRepository.getPreferredMarkupFormat(bookId)
+            onStartWork(bookId, preferredFormat, target.sectionIds, instruction)
+            _uiState.update {
+                it.copy(
+                    regenTarget = null,
+                    isGenerating = true,
+                    streamDrawerExpanded = true,
+                    activeWritingLabel = "${target.titleLabel} を再生成中…",
+                    snackbarMessage = "${target.titleLabel}（${target.sectionIds.size}節）の部分再生成を開始しました",
+                )
+            }
+        }
+    }
+
     fun setStreamStatusHint(label: String, preview: String) {
         _uiState.update {
             it.copy(
@@ -276,7 +351,7 @@ class WorkspaceViewModel(
             return
         }
         val preferredFormat = settingsRepository.getPreferredMarkupFormat(bookId)
-        onStartWork(bookId, preferredFormat)
+        onStartWork(bookId, preferredFormat, null, null)
         _uiState.update {
             it.copy(
                 isGenerating = true,

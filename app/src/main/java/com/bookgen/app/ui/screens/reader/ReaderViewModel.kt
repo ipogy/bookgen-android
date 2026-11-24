@@ -11,6 +11,7 @@ import com.bookgen.app.domain.model.ReaderAppearance
 import com.bookgen.app.domain.model.ReaderFontChoice
 import com.bookgen.app.domain.model.ThemePreference
 import com.bookgen.app.domain.repository.BookRepository
+import com.bookgen.app.domain.repository.SettingsRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -47,6 +48,7 @@ data class ReaderUiState(
     val isLoading: Boolean = true,
     val detail: BookDetail? = null,
     val currentChapterIndex: Int = 0,
+    val savedScrollFraction: Double = 0.0,
     val parsedSections: List<ParsedSectionBlocks> = emptyList(),
     val appearance: ReaderAppearance = ReaderAppearance(),
     val chromeVisible: Boolean = true,
@@ -59,15 +61,13 @@ class ReaderViewModel(
     private val initialChapterIndex: Int,
     private val exportDir: File,
     private val repository: BookRepository,
-    initialTheme: ThemePreference = ThemePreference.LIGHT,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
         ReaderUiState(
             currentChapterIndex = initialChapterIndex,
-            appearance = ReaderAppearance(
-                theme = if (initialTheme == ThemePreference.SYSTEM) ThemePreference.LIGHT else initialTheme,
-            ),
+            appearance = settingsRepository.getReaderAppearance(),
         ),
     )
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
@@ -88,12 +88,22 @@ class ReaderViewModel(
                     progress != null -> detail.chapters.indexOfFirst { it.chapter.id == progress.chapterId }.takeIf { it >= 0 } ?: 0
                     else -> 0
                 }
+                val restoredScrollFraction = if (
+                    initialChapterIndex == 0 &&
+                    progress != null &&
+                    detail.chapters.getOrNull(chapterIndex)?.chapter?.id == progress.chapterId
+                ) {
+                    progress.scrollOffset.coerceIn(0.0, 1.0)
+                } else {
+                    0.0
+                }
                 val parsed = parseChapterSections(detail, chapterIndex)
                 _uiState.update {
                     it.copy(
                         isLoading = false,
                         detail = detail,
                         currentChapterIndex = chapterIndex,
+                        savedScrollFraction = restoredScrollFraction,
                         parsedSections = parsed,
                     )
                 }
@@ -117,6 +127,7 @@ class ReaderViewModel(
         _uiState.update {
             it.copy(
                 currentChapterIndex = index,
+                savedScrollFraction = 0.0,
                 parsedSections = parsed,
             )
         }
@@ -133,34 +144,56 @@ class ReaderViewModel(
         }
     }
 
+    fun persistScrollFraction(scrollFraction: Double) {
+        val detail = _uiState.value.detail ?: return
+        val chapter = detail.chapters.getOrNull(_uiState.value.currentChapterIndex) ?: return
+        val normalized = scrollFraction.coerceIn(0.0, 1.0)
+        viewModelScope.launch {
+            runCatching {
+                repository.saveReadingProgress(
+                    bookId = detail.summary.id,
+                    chapterId = chapter.chapter.id,
+                    sectionId = chapter.sections.firstOrNull()?.id,
+                    scrollOffset = normalized,
+                )
+            }
+        }
+    }
+
     fun toggleChromeVisibility() {
         _uiState.update { it.copy(chromeVisible = !it.chromeVisible) }
     }
 
     fun setTheme(theme: ThemePreference) {
-        _uiState.update { it.copy(appearance = it.appearance.copy(theme = theme)) }
+        updateAppearance { it.copy(theme = theme) }
     }
 
     fun setFontChoice(choice: ReaderFontChoice) {
-        _uiState.update { it.copy(appearance = it.appearance.copy(fontChoice = choice)) }
+        updateAppearance { it.copy(fontChoice = choice) }
     }
 
     fun setFontSizeSp(size: Float) {
-        _uiState.update {
-            it.copy(appearance = it.appearance.copy(fontSizeSp = size.coerceIn(14f, 24f)))
-        }
+        updateAppearance { it.copy(fontSizeSp = size.coerceIn(14f, 24f)) }
     }
 
     fun setLineHeight(multiplier: Float) {
-        _uiState.update {
-            it.copy(appearance = it.appearance.copy(lineHeightMultiplier = multiplier.coerceIn(1.4f, 2.1f)))
-        }
+        updateAppearance { it.copy(lineHeightMultiplier = multiplier.coerceIn(1.4f, 2.1f)) }
     }
 
     fun setHorizontalPadding(dp: Int) {
-        _uiState.update {
-            it.copy(appearance = it.appearance.copy(horizontalPaddingDp = dp.coerceIn(12, 36)))
+        updateAppearance { it.copy(horizontalPaddingDp = dp.coerceIn(12, 36)) }
+    }
+
+    private inline fun updateAppearance(transform: (ReaderAppearance) -> ReaderAppearance) {
+        _uiState.update { cur ->
+            val updated = transform(cur.appearance)
+            settingsRepository.setReaderAppearance(updated)
+            cur.copy(appearance = updated)
         }
+    }
+
+    fun notifyMessage(message: String) {
+        _uiState.update { it.copy(snackbarMessage = message) }
     }
 
     fun selectExportFormat(format: ExportFormatType) {

@@ -8,10 +8,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.IntOffset
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.dropUnlessResumed
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
@@ -79,8 +77,6 @@ fun BookGenApp(
     } else {
         rememberNavBackStack(AppRoute.LibraryRouteKey)
     }
-
-    val themePreference by container.themePreference.collectAsStateWithLifecycle()
 
     NavDisplay(
         backStack = backStack,
@@ -159,9 +155,11 @@ fun BookGenApp(
                         settingsRepository = container.settingsRepository,
                         progressBus = container.progressBus,
                         isWorkRunningFlow = container.observeGenerationRunning(key.bookId),
-                        onStartWork = { targetBookId, formatOverride ->
+                        onStartWork = { targetBookId, formatOverride, targetSectionIds, customInstruction ->
                             container.startBookGeneration(
                                 bookId = targetBookId,
+                                targetSectionIds = targetSectionIds,
+                                customInstruction = customInstruction,
                                 markupFormatOverride = formatOverride,
                             )
                         },
@@ -190,7 +188,7 @@ fun BookGenApp(
                         initialChapterIndex = key.initialChapterIndex,
                         exportDir = container.exportOutputDir,
                         repository = container.bookRepository,
-                        initialTheme = themePreference,
+                        settingsRepository = container.settingsRepository,
                     )
                 }
                 ReaderRoute(

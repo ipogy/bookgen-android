@@ -1,5 +1,11 @@
 package com.bookgen.app.ui.screens.reader
 
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContract
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -58,12 +64,16 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bookgen.app.data.storage.ExportShareHelper
 import com.bookgen.app.domain.model.ChapterWithSections
 import com.bookgen.app.domain.model.DocBlock
 import com.bookgen.app.domain.model.ExportFormatType
@@ -75,7 +85,24 @@ import com.bookgen.app.ui.components.WavyProgressTrack
 import com.bookgen.app.ui.theme.BookGenRadius
 import com.bookgen.app.ui.theme.BookGenTheme
 import com.bookgen.app.ui.theme.BookGenThemeExtras
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
+import java.io.File
 import kotlin.math.max
+
+private class CreateTypedDocumentContract : ActivityResultContract<Pair<String, String>, Uri?>() {
+    override fun createIntent(context: Context, input: Pair<String, String>): Intent =
+        Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = input.second
+            putExtra(Intent.EXTRA_TITLE, input.first)
+        }
+
+    override fun parseResult(resultCode: Int, intent: Intent?): Uri? =
+        if (resultCode == Activity.RESULT_OK) intent?.data else null
+}
 
 @Composable
 fun ReaderRoute(
@@ -86,6 +113,38 @@ fun ReaderRoute(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var pendingSavePath by remember { mutableStateOf<String?>(null) }
+
+    val saveToDeviceLauncher = rememberLauncherForActivityResult(
+        contract = CreateTypedDocumentContract(),
+    ) { destUri ->
+        val srcPath = pendingSavePath
+        pendingSavePath = null
+        if (destUri != null && srcPath != null) {
+            scope.launch {
+                ExportShareHelper.copyExportedFileToUri(context, srcPath, destUri)
+                    .onSuccess { bytes ->
+                        viewModel.notifyMessage("端末に保存しました (${bytes / 1024} KiB)")
+                    }
+                    .onFailure { err ->
+                        viewModel.notifyMessage(err.message ?: "端末保存に失敗しました")
+                    }
+            }
+        }
+    }
+
+    val effectiveShareHandler: (String, ExportFormatType) -> Unit = { path, fmt ->
+        if (onShareExportedFile != null) {
+            onShareExportedFile(path, fmt)
+        } else {
+            ExportShareHelper.shareExportedFile(context, path, fmt)
+                .onFailure { err ->
+                    viewModel.notifyMessage(err.message ?: "共有アプリの起動に失敗しました")
+                }
+        }
+    }
 
     BookGenTheme(preference = state.appearance.theme) {
         ReaderScreen(
@@ -95,6 +154,7 @@ fun ReaderRoute(
                 state.detail?.summary?.id?.let(onOpenWorkspace)
             },
             onSelectChapter = viewModel::selectChapter,
+            onScrollFractionChanged = viewModel::persistScrollFraction,
             onToggleChrome = viewModel::toggleChromeVisibility,
             onThemeSelected = viewModel::setTheme,
             onFontSelected = viewModel::setFontChoice,
@@ -106,20 +166,26 @@ fun ReaderRoute(
             onToggleIncludeIncomplete = viewModel::setIncludeIncompleteNotice,
             onStartExport = viewModel::startExport,
             onCancelExport = viewModel::cancelExport,
-            onShareExportedFile = onShareExportedFile,
+            onShareExportedFile = effectiveShareHandler,
+            onSaveExportedToDevice = { path, fmt ->
+                pendingSavePath = path
+                val fileName = File(path).name.ifBlank { "book.${fmt.extension}" }
+                saveToDeviceLauncher.launch(fileName to fmt.mimeType)
+            },
             onDismissSnackbar = viewModel::clearSnackbar,
             modifier = modifier,
         )
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
 fun ReaderScreen(
     state: ReaderUiState,
     onBack: () -> Unit,
     onOpenWorkspace: () -> Unit,
     onSelectChapter: (Int) -> Unit,
+    onScrollFractionChanged: (Double) -> Unit,
     onToggleChrome: () -> Unit,
     onThemeSelected: (ThemePreference) -> Unit,
     onFontSelected: (ReaderFontChoice) -> Unit,
@@ -132,6 +198,7 @@ fun ReaderScreen(
     onStartExport: () -> Unit,
     onCancelExport: () -> Unit,
     onShareExportedFile: ((String, ExportFormatType) -> Unit)?,
+    onSaveExportedToDevice: ((String, ExportFormatType) -> Unit)? = null,
     onDismissSnackbar: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -144,9 +211,26 @@ fun ReaderScreen(
     val chapters = detail?.chapters.orEmpty()
     val currentChapter = chapters.getOrNull(state.currentChapterIndex)
     val listState = rememberLazyListState()
+    val totalListItems = remember(state.parsedSections) {
+        1 + state.parsedSections.sumOf { sec -> 1 + if (sec.blocks.isEmpty()) 1 else sec.blocks.size }
+    }
 
-    LaunchedEffect(state.currentChapterIndex) {
-        listState.scrollToItem(0)
+    LaunchedEffect(state.currentChapterIndex, state.savedScrollFraction, totalListItems) {
+        val maxIdx = (totalListItems - 1).coerceAtLeast(0)
+        val targetIdx = (maxIdx * state.savedScrollFraction).toInt().coerceIn(0, maxIdx)
+        listState.scrollToItem(targetIdx)
+    }
+
+    LaunchedEffect(listState, state.currentChapterIndex, totalListItems) {
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .distinctUntilChanged()
+            .debounce(600L)
+            .collect { visibleIdx ->
+                if (!state.isLoading && totalListItems > 1) {
+                    val fraction = visibleIdx.toDouble() / (totalListItems - 1).toDouble()
+                    onScrollFractionChanged(fraction.coerceIn(0.0, 1.0))
+                }
+            }
     }
 
     LaunchedEffect(state.snackbarMessage) {
@@ -414,6 +498,7 @@ fun ReaderScreen(
                 onStartExport = onStartExport,
                 onCancelExport = onCancelExport,
                 onShareFile = onShareExportedFile,
+                onSaveToDevice = onSaveExportedToDevice,
             )
         }
     }
@@ -545,6 +630,7 @@ private fun ExportBottomSheetContent(
     onStartExport: () -> Unit,
     onCancelExport: () -> Unit,
     onShareFile: ((String, ExportFormatType) -> Unit)?,
+    onSaveToDevice: ((String, ExportFormatType) -> Unit)?,
 ) {
     Column(
         modifier = Modifier
@@ -633,13 +719,28 @@ private fun ExportBottomSheetContent(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (onShareFile != null) {
-                        Spacer(Modifier.height(6.dp))
-                        OutlinedButton(
-                            onClick = { onShareFile(path, exportState.selectedFormat) },
-                            shape = BookGenRadius.Control,
-                        ) {
-                            Text("他アプリで共有・開く")
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (onShareFile != null) {
+                            OutlinedButton(
+                                onClick = { onShareFile(path, exportState.selectedFormat) },
+                                modifier = Modifier.weight(1f),
+                                shape = BookGenRadius.Control,
+                            ) {
+                                Text("他アプリで共有")
+                            }
+                        }
+                        if (onSaveToDevice != null) {
+                            OutlinedButton(
+                                onClick = { onSaveToDevice(path, exportState.selectedFormat) },
+                                modifier = Modifier.weight(1f),
+                                shape = BookGenRadius.Control,
+                            ) {
+                                Text("端末に保存")
+                            }
                         }
                     }
                 }
