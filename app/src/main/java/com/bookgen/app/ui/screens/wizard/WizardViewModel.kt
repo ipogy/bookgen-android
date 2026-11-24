@@ -2,12 +2,15 @@ package com.bookgen.app.ui.screens.wizard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.bookgen.app.data.pipeline.GenerationPipeline
+import com.bookgen.app.domain.model.AiSettings
 import com.bookgen.app.domain.model.ChapterPlanDraft
 import com.bookgen.app.domain.model.GenreInfo
 import com.bookgen.app.domain.model.MarkupFormat
 import com.bookgen.app.domain.model.NewBookRequest
 import com.bookgen.app.domain.model.SectionPlanDraft
 import com.bookgen.app.domain.repository.BookRepository
+import com.bookgen.app.domain.repository.SettingsRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -40,15 +43,27 @@ data class WizardUiState(
     val targetCharCount: Long = 36000L,
     val markupFormat: MarkupFormat = MarkupFormat.MARKDOWN,
     val tone: String = "厳密・論理",
+    val useAiOutline: Boolean = true,
+    val hasPlannerKey: Boolean = false,
     val isSubmitting: Boolean = false,
     val errorMessage: String? = null,
 )
 
 class WizardViewModel(
     private val repository: BookRepository,
+    private val settingsRepository: SettingsRepository,
+    private val generationPipeline: GenerationPipeline,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(WizardUiState())
+    val aiSettings: StateFlow<AiSettings> = settingsRepository.aiSettings
+
+    private val _uiState = MutableStateFlow(
+        WizardUiState(
+            hasPlannerKey = settingsRepository.aiSettings.value.let {
+                it.hasKeyForModel(it.plannerModel)
+            },
+        ),
+    )
     val uiState: StateFlow<WizardUiState> = _uiState.asStateFlow()
 
     private var classifyJob: Job? = null
@@ -64,6 +79,11 @@ class WizardViewModel(
                         )
                     }
                 }
+        }
+        viewModelScope.launch {
+            settingsRepository.aiSettings.collect { s ->
+                _uiState.update { it.copy(hasPlannerKey = s.hasKeyForModel(s.plannerModel)) }
+            }
         }
     }
 
@@ -139,6 +159,22 @@ class WizardViewModel(
         _uiState.update { it.copy(tone = tone) }
     }
 
+    fun onToggleUseAiOutline(useAi: Boolean) {
+        _uiState.update { it.copy(useAiOutline = useAi, errorMessage = null) }
+    }
+
+    fun saveAiSettings(settings: AiSettings) {
+        viewModelScope.launch {
+            settingsRepository.updateAiSettings(settings)
+        }
+    }
+
+    fun clearAiKeys() {
+        viewModelScope.launch {
+            settingsRepository.clearApiKeys()
+        }
+    }
+
     fun createPlannedBook(onCreated: (String) -> Unit) {
         val cur = _uiState.value
         val theme = cur.themePrompt.trim()
@@ -147,32 +183,57 @@ class WizardViewModel(
             return
         }
 
-        val effectiveTitle = cur.bookTitle.trim().ifEmpty { theme.take(48) }
-        val genre = cur.selectedGenre ?: cur.genres.firstOrNull()
-        val genreKey = genre?.key ?: "tech"
-        val genreName = genre?.name ?: "IT技術・プログラミング・インフラ"
+        val initialTitle = cur.bookTitle.trim()
+        val fallbackGenre = cur.selectedGenre ?: cur.genres.firstOrNull()
 
         viewModelScope.launch {
             _uiState.update { it.copy(isSubmitting = true, errorMessage = null) }
             try {
+                val aiPlan = if (cur.useAiOutline && cur.hasPlannerKey) {
+                    generationPipeline.planOutlineWithAi(
+                        theme = theme,
+                        targetAudience = cur.targetAudience,
+                        tone = cur.tone,
+                        chapterCount = cur.chapterCount,
+                        sectionsPerChapter = cur.sectionsPerChapter,
+                        preferredGenre = cur.selectedGenre,
+                        autoDetectGenre = cur.autoDetectGenre,
+                    )
+                } else {
+                    null
+                }
+
+                val effectiveTitle = initialTitle.ifEmpty {
+                    aiPlan?.draft?.bookTitle?.trim()?.ifEmpty { null } ?: theme.take(48)
+                }
+                val resolvedGenre = aiPlan?.genre ?: fallbackGenre
+                val genreKey = resolvedGenre?.key ?: "tech"
+                val genreName = resolvedGenre?.name ?: "IT技術・プログラミング・インフラ"
+                val effectiveAudience = cur.targetAudience.trim().ifEmpty {
+                    aiPlan?.draft?.targetAudience?.trim()?.ifEmpty { null } ?: "一般読者"
+                }
+                val overview = aiPlan?.draft?.overview?.trim()?.ifEmpty { null }
+                    ?: "「${effectiveTitle}」— ${genreName}。${resolvedGenre?.elementLabel ?: ""}"
+
                 val created = repository.createBook(
                     NewBookRequest(
                         title = effectiveTitle,
                         themePrompt = theme,
                         genreKey = genreKey,
                         genreName = genreName,
-                        targetAudience = cur.targetAudience.trim().ifEmpty { "一般読者" },
+                        targetAudience = effectiveAudience,
                         tone = cur.tone,
                         targetCharCount = cur.targetCharCount,
-                        overview = "「${effectiveTitle}」— ${genreName}。${genre?.elementLabel ?: ""}",
+                        overview = overview,
                     ),
                 )
+                settingsRepository.setPreferredMarkupFormat(created.id, cur.markupFormat)
 
-                val outline = buildStructuredSkeleton(
+                val outline = aiPlan?.chapters ?: buildStructuredSkeleton(
                     title = effectiveTitle,
                     chapters = cur.chapterCount,
                     sectionsPerChapter = cur.sectionsPerChapter,
-                    elementLabel = genre?.elementLabel ?: "具体例と実践手順",
+                    elementLabel = resolvedGenre?.elementLabel ?: "具体例と実践手順",
                 )
                 repository.saveOutline(created.id, outline)
                 _uiState.update { it.copy(isSubmitting = false) }

@@ -41,7 +41,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -66,10 +65,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bookgen.app.domain.model.AiSettings
 import com.bookgen.app.domain.model.BookStatus
 import com.bookgen.app.domain.model.BookSummary
 import com.bookgen.app.domain.model.SearchHit
 import com.bookgen.app.domain.model.ThemePreference
+import com.bookgen.app.ui.components.AiSettingsBottomSheet
 import com.bookgen.app.ui.components.BookStatusBadge
 import com.bookgen.app.ui.components.EditorialCard
 import com.bookgen.app.ui.components.GenreBadge
@@ -86,10 +87,12 @@ fun LibraryRoute(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val themePref by viewModel.themePreference.collectAsStateWithLifecycle()
+    val aiSettings by viewModel.aiSettings.collectAsStateWithLifecycle()
 
     LibraryScreen(
         state = state,
         currentTheme = themePref,
+        aiSettings = aiSettings,
         onNewBookClick = onNewBookClick,
         onOpenWorkspace = onOpenWorkspace,
         onOpenReader = onOpenReader,
@@ -98,6 +101,8 @@ fun LibraryRoute(
         onDeleteBook = viewModel::deleteBook,
         onImportDirectory = viewModel::importLegacyDirectory,
         onThemeSelected = viewModel::updateThemePreference,
+        onSaveAiSettings = viewModel::saveAiSettings,
+        onClearAiKeys = viewModel::clearAiKeys,
         onDismissMessages = viewModel::clearBannerMessages,
         modifier = modifier,
     )
@@ -108,6 +113,7 @@ fun LibraryRoute(
 fun LibraryScreen(
     state: LibraryUiState,
     currentTheme: ThemePreference,
+    aiSettings: AiSettings,
     onNewBookClick: () -> Unit,
     onOpenWorkspace: (String) -> Unit,
     onOpenReader: (String, Int) -> Unit,
@@ -116,6 +122,8 @@ fun LibraryScreen(
     onDeleteBook: (String) -> Unit,
     onImportDirectory: (String) -> Unit,
     onThemeSelected: (ThemePreference) -> Unit,
+    onSaveAiSettings: (AiSettings) -> Unit,
+    onClearAiKeys: () -> Unit,
     onDismissMessages: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -290,9 +298,12 @@ fun LibraryScreen(
     }
 
     if (showSettingsDialog) {
-        LibrarySettingsDialog(
+        AiSettingsBottomSheet(
+            currentSettings = aiSettings,
             currentTheme = currentTheme,
             onThemeSelected = onThemeSelected,
+            onSaveSettings = onSaveAiSettings,
+            onClearKeys = onClearAiKeys,
             onDismiss = { showSettingsDialog = false },
         )
     }
@@ -609,53 +620,6 @@ private fun LegacyImportDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("閉じる") }
-        },
-    )
-}
-
-@Composable
-private fun LibrarySettingsDialog(
-    currentTheme: ThemePreference,
-    onThemeSelected: (ThemePreference) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("表示・スタジオ設定") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = "アプリテーマ",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Spacer(Modifier.height(4.dp))
-                ThemePreference.entries.forEach { pref ->
-                    val label = when (pref) {
-                        ThemePreference.SYSTEM -> "システム設定に従う"
-                        ThemePreference.LIGHT -> "Light (Alabaster Paper)"
-                        ThemePreference.DARK -> "Dark (Studio Slate)"
-                        ThemePreference.SEPIA -> "Sepia (温かみのある紙面)"
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onThemeSelected(pref) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(
-                            selected = currentTheme == pref,
-                            onClick = { onThemeSelected(pref) },
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(text = label, style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("完了") }
         },
     )
 }
