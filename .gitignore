@@ -1,0 +1,36 @@
+# Gradle / Android
+.gradle/
+.kotlin/
+build/
+app/build/
+app/src/main/jniLibs/
+app/src/main/uniffi/
+local.properties
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+captures/
+.cxx/
+.externalNativeBuild/
+
+# Rust
+target/
+rust-core/target/
+rust-core/target-*/
+**/*.rs.bk
+
+# IDE / OS
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Secrets / Keystores
+*.jks
+*.keystore
+*.pem
+*.p12
+.env
+.env.*
