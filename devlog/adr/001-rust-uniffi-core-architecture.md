@@ -1,6 +1,6 @@
 # ADR-001: Rust (`rust-core`) + Mozilla UniFFI と Kotlin (Compose MVVM) の責務分割
 
-Status: Proposed
+Status: Accepted (Issue #1 verified with UniFFI 0.32.2 + cargo-ndk)
 
 Release: Unreleased
 
