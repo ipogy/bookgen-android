@@ -7,6 +7,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,8 +22,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AutoStories
@@ -203,7 +204,7 @@ fun LibraryScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item(key = "search_strip") {
+            item(key = "search_strip", contentType = "search_strip") {
                 SearchAndFilterStrip(
                     query = state.searchQuery,
                     activeFilter = state.activeFilter,
@@ -214,7 +215,7 @@ fun LibraryScreen(
             }
 
             if (state.searchQuery.isNotBlank()) {
-                item(key = "search_heading") {
+                item(key = "search_heading", contentType = "section_heading") {
                     Text(
                         text = "全文検索結果 (${state.searchHits.size}件)",
                         style = MaterialTheme.typography.titleSmall,
@@ -222,7 +223,7 @@ fun LibraryScreen(
                     )
                 }
                 if (state.searchHits.isEmpty() && !state.isSearching) {
-                    item(key = "search_empty") {
+                    item(key = "search_empty", contentType = "empty_notice") {
                         Text(
                             text = "一致する本文・見出しが見つかりませんでした。",
                             style = MaterialTheme.typography.bodyMedium,
@@ -234,6 +235,7 @@ fun LibraryScreen(
                     items(
                         items = state.searchHits,
                         key = { "hit_${it.sectionId}" },
+                        contentType = { "search_hit" },
                     ) { hit ->
                         SearchHitRow(
                             hit = hit,
@@ -243,7 +245,7 @@ fun LibraryScreen(
                 }
             } else {
                 if (state.heroBook != null) {
-                    item(key = "hero_card") {
+                    item(key = "hero_card", contentType = "hero_card") {
                         HeroResumeCard(
                             book = state.heroBook,
                             onResumeWorkspace = { onOpenWorkspace(state.heroBook.id) },
@@ -252,7 +254,7 @@ fun LibraryScreen(
                     }
                 }
 
-                item(key = "library_heading") {
+                item(key = "library_heading", contentType = "section_heading") {
                     Text(
                         text = "ライブラリ (${state.filteredBooks.size}冊)",
                         style = MaterialTheme.typography.titleSmall,
@@ -261,7 +263,7 @@ fun LibraryScreen(
                 }
 
                 if (state.isLoading) {
-                    item(key = "loading") {
+                    item(key = "loading", contentType = "loading") {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -272,7 +274,7 @@ fun LibraryScreen(
                         }
                     }
                 } else if (state.filteredBooks.isEmpty()) {
-                    item(key = "empty_library") {
+                    item(key = "empty_library", contentType = "empty_notice") {
                         EmptyLibraryNotice(
                             onCreateClick = onNewBookClick,
                             onImportClick = { showImportDialog = true },
@@ -282,6 +284,7 @@ fun LibraryScreen(
                     items(
                         items = state.filteredBooks,
                         key = { it.id },
+                        contentType = { "book_row" },
                     ) { book ->
                         BookLibraryRow(
                             book = book,
@@ -383,8 +386,13 @@ private fun SearchAndFilterStrip(
         )
 
         AnimatedVisibility(visible = query.isBlank()) {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(LibraryFilter.entries) { filter ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                LibraryFilter.entries.forEach { filter ->
                     FilterChip(
                         selected = activeFilter == filter,
                         onClick = { onFilterSelected(filter) },

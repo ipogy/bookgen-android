@@ -37,6 +37,7 @@ import com.bookgen.core.uniffi.getGenre as rustGetGenre
 import com.bookgen.core.uniffi.listGenres as rustListGenres
 import com.bookgen.core.uniffi.parseMarkupBlocks as rustParseMarkupBlocks
 import com.bookgen.core.uniffi.sanitizeSectionOutput as rustSanitizeSectionOutput
+import com.bookgen.core.uniffi.uniffiEnsureInitialized
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -58,7 +59,11 @@ class RustBookRepository(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : BookRepository {
 
-    private val store: BookStore = runRustGuarded { BookStore.open(dbPath) }
+    private val store: BookStore = runRustGuarded {
+        // Explicit startup contract check per UniFFI 0.32.x single-crate guidelines.
+        uniffiEnsureInitialized()
+        BookStore.open(dbPath)
+    }
     private val exporter: BookExporter = BookExporter()
     private val refreshCounter = MutableStateFlow(0L)
 

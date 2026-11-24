@@ -28,7 +28,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -382,7 +382,10 @@ fun ReaderScreen(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 currentChapter?.let { ch ->
-                    item(key = "chapter_banner_${ch.chapter.id}") {
+                    item(
+                        key = "chapter_banner_${ch.chapter.id}",
+                        contentType = "chapter_banner",
+                    ) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(
                                 text = "CHAPTER ${ch.chapter.chapterNumber} • ${chapterCharSum}字 (約${estMinutes}分)",
@@ -411,7 +414,10 @@ fun ReaderScreen(
                 state.parsedSections.forEach { sec ->
                     val hasLeadingHeading = sec.blocks.firstOrNull() is DocBlock.Heading
                     if (!hasLeadingHeading) {
-                        item(key = "sec_title_${sec.sectionId}") {
+                        item(
+                            key = "sec_title_${sec.sectionId}",
+                            contentType = "section_title",
+                        ) {
                             Text(
                                 text = "${sec.chapterNumber}.${sec.sectionNumber} ${sec.title}",
                                 style = MaterialTheme.typography.titleLarge,
@@ -421,7 +427,10 @@ fun ReaderScreen(
                     }
 
                     if (!sec.isCompleted) {
-                        item(key = "sec_incomplete_${sec.sectionId}") {
+                        item(
+                            key = "sec_incomplete_${sec.sectionId}",
+                            contentType = "section_incomplete",
+                        ) {
                             EditorialCard(modifier = Modifier.fillMaxWidth()) {
                                 Text(
                                     text = "この節はまだ執筆が完了していません。",
@@ -438,10 +447,11 @@ fun ReaderScreen(
                             }
                         }
                     } else {
-                        items(
-                            items = sec.blocks.mapIndexed { idx, block -> "${sec.sectionId}_$idx" to block },
-                            key = { it.first },
-                        ) { (_, block) ->
+                        itemsIndexed(
+                            items = sec.blocks,
+                            key = { idx, _ -> "${sec.sectionId}_$idx" },
+                            contentType = { _, block -> block::class },
+                        ) { _, block ->
                             NativeAstBlockView(
                                 block = block,
                                 appearance = state.appearance,
