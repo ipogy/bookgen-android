@@ -198,6 +198,7 @@ tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders"
 
 tasks.matching { it.name.startsWith("test") && it.name.endsWith("UnitTest") }.configureEach {
     dependsOn(buildRustHost, generateUniffiBindings)
+    inputs.file(File(rustWorkspaceDir, "target/debug/$hostSharedLibName"))
 }
 
 dependencies {

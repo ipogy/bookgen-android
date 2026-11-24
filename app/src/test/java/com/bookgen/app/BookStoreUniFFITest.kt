@@ -81,6 +81,9 @@ class BookStoreUniFFITest {
         val hits = store.search("persistence", summary.id, 10u)
         assertEquals(1, hits.size)
         assertTrue(hits.first().snippet.contains("persistence"))
+
+        val quotedHits = store.search("\"persistence\" \"offline\"", summary.id, 10u)
+        assertEquals(1, quotedHits.size)
     }
 
     @Test(expected = BookGenException.NotFound::class)
