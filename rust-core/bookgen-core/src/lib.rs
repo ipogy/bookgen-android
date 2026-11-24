@@ -11,10 +11,24 @@
 #![cfg_attr(not(test), deny(clippy::panic_in_result_fn))]
 
 pub mod error;
+pub mod exporter;
+pub mod genres;
+pub mod markup;
 pub mod models;
 pub mod store;
 
 pub use error::BookGenError;
+pub use exporter::{
+    BookExporter, ExportFormat, ExportProgressListener, ExportRequest, ExportResult,
+    ProgressCallbackError, ProgressEvent, ProgressStage,
+};
+pub use genres::{
+    classify_embedding, classify_theme_keywords, get_genre, list_genres, GenreInfo, GenreMatch,
+};
+pub use markup::{
+    detect_markup_format_for_text, parse_markup_blocks, sanitize_section_output, AdmonitionKind,
+    DocumentBlock,
+};
 pub use models::{
     BookDetail, BookMetadataUpdate, BookStatus, BookSummary, ChapterRecord, ChapterWithSections,
     CoreHealthStatus, IncompleteSection, LegacyImportReport, MarkupFormat, NewBookDraft,
