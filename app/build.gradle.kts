@@ -53,6 +53,7 @@ val buildRustHost by tasks.registering(Exec::class) {
         File(rustWorkspaceDir, "bookgen-core/Cargo.toml"),
     )
     inputs.dir(File(rustWorkspaceDir, "bookgen-core/src"))
+    inputs.dir(File(rustWorkspaceDir, "bookgen-core/assets"))
     outputs.file(File(rustWorkspaceDir, "target/debug/$hostSharedLibName"))
 }
 
@@ -121,6 +122,7 @@ val buildRustAndroidDebugJni by tasks.registering(Exec::class) {
         File(rustWorkspaceDir, "bookgen-core/Cargo.toml"),
     )
     inputs.dir(File(rustWorkspaceDir, "bookgen-core/src"))
+    inputs.dir(File(rustWorkspaceDir, "bookgen-core/assets"))
     outputs.dir(jniLibsOutDir)
 }
 

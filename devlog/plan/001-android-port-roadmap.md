@@ -33,8 +33,9 @@ Status: Done (PR #1 — Issue #1)
 
 ## Phase 3: Rust コアロジック層の実装
 
-Status: In Progress (Issue #2 Complete; Issues #3–#4 Remaining)
+Status: In Progress (Issues #2–#3 Complete; Issue #4 Remaining)
 - Issue #2 (`feat/2-rust-sqlite-fts5-importer`): Bundled SQLite WAL + FTS5 trigram store, per-section edits & revision rollback, incomplete/empty section tracking, and idempotent legacy `app_data.db`/`.adoc`/`.md` importer ([PR devlog](../pr/002-issue2-rust-sqlite-fts5-importer.md)).
+- Issue #3 (`feat/3-rust-parser-genre-exporter`): AsciiDoc/Markdown AST parser & wrapper sanitizer, bundled 12-genre metadata & 3072-dim cosine classifier, and streaming/cancellable EPUB 3 / PDF / Markdown / AsciiDoc exporters ([PR devlog](../pr/003-issue3-rust-parser-genre-exporter.md)).
 
 ## Phase 4: Kotlin (Jetpack Compose) UI と AI生成エンジンの実装
 
