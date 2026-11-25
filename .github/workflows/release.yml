@@ -27,14 +27,15 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK & NDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install pinned NDK and build tools
+      - name: Install pinned NDK and Android SDK 36 components
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager --install "ndk;28.2.13676358" "platforms;android-36" "build-tools;36.0.0"
-          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/28.2.13676358" >> "$GITHUB_ENV"
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          SDKMANAGER=$(command -v sdkmanager || find "${SDK_ROOT}/cmdline-tools" -name sdkmanager -type f | sort -V | tail -n1)
+          echo "Using sdkmanager: ${SDKMANAGER}"
+          yes | "$SDKMANAGER" --sdk_root="${SDK_ROOT}" --licenses >/dev/null 2>&1 || true
+          yes | "$SDKMANAGER" --sdk_root="${SDK_ROOT}" --install "ndk;28.2.13676358" "platforms;android-36" "build-tools;36.0.0"
+          echo "ANDROID_HOME=${SDK_ROOT}" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=${SDK_ROOT}/ndk/28.2.13676358" >> "$GITHUB_ENV"
 
       - name: Set up Rust toolchain and Android targets
         uses: dtolnay/rust-toolchain@stable
