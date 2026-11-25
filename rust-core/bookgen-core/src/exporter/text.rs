@@ -3,7 +3,10 @@ use std::sync::atomic::AtomicBool;
 
 use crate::error::BookGenError;
 use crate::exporter::check_cancelled;
-use crate::markup::{blocks_to_asciidoc, blocks_to_markdown, parse_markup_blocks, DocumentBlock};
+use crate::markup::{
+    blocks_to_asciidoc, blocks_to_markdown, parse_markup_blocks, resolve_section_format,
+    DocumentBlock,
+};
 use crate::models::{BookDetail, SectionStatus};
 
 pub(crate) fn write_markdown_book<W: Write>(
@@ -67,7 +70,8 @@ pub(crate) fn write_markdown_book<W: Write>(
 
         for sec in &ch.sections {
             check_cancelled(cancel_flag)?;
-            let blocks = parse_markup_blocks(sec.content.clone(), sec.format);
+            let format = resolve_section_format(sec.format, &sec.content);
+            let blocks = parse_markup_blocks(sec.content.clone(), format);
             let has_leading_heading = matches!(blocks.first(), Some(DocumentBlock::Heading { .. }));
             if !has_leading_heading {
                 writeln!(
@@ -129,7 +133,8 @@ pub(crate) fn write_asciidoc_book<W: Write>(
 
         for sec in &ch.sections {
             check_cancelled(cancel_flag)?;
-            let blocks = parse_markup_blocks(sec.content.clone(), sec.format);
+            let format = resolve_section_format(sec.format, &sec.content);
+            let blocks = parse_markup_blocks(sec.content.clone(), format);
             let has_leading_heading = matches!(blocks.first(), Some(DocumentBlock::Heading { .. }));
             if !has_leading_heading {
                 writeln!(

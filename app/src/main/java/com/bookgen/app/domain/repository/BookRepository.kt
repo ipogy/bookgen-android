@@ -97,6 +97,8 @@ interface BookRepository {
 
     fun sanitizeOutput(raw: String, format: MarkupFormat): String
 
+    fun detectMarkupFormat(content: String): MarkupFormat
+
     fun parseAstBlocks(content: String, format: MarkupFormat): List<DocBlock>
 
     fun exportBookStream(

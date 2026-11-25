@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use crate::error::BookGenError;
 use crate::exporter::check_cancelled;
-use crate::markup::{parse_markup_blocks, DocumentBlock};
+use crate::markup::{parse_markup_blocks, resolve_section_format, DocumentBlock};
 use crate::models::{BookDetail, SectionStatus};
 
 const PAGE_WIDTH: f64 = 595.28; // A4 width pt
@@ -229,7 +229,8 @@ pub(crate) fn write_pdf_book<W: Write>(
 
         for sec in &ch.sections {
             check_cancelled(cancel_flag)?;
-            let blocks = parse_markup_blocks(sec.content.clone(), sec.format);
+            let format = resolve_section_format(sec.format, &sec.content);
+            let blocks = parse_markup_blocks(sec.content.clone(), format);
             let has_leading_heading = matches!(blocks.first(), Some(DocumentBlock::Heading { .. }));
             if !has_leading_heading {
                 pb.add_gap(6.0);

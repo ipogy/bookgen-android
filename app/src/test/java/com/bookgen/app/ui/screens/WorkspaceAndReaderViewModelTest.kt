@@ -182,6 +182,61 @@ class WorkspaceAndReaderViewModelTest {
         assertEquals(0.625, vm2.uiState.value.savedScrollFraction, 0.001)
     }
 
+    @Test
+    fun readerAutoUpgradesMislabeledMarkdownSectionToAsciiDocAndExtractsMathBlock() = runTest {
+        val dbPath = File(tempFolder.root, "reader_upgrade_test.db").absolutePath
+        val exportDir = tempFolder.newFolder("exports_upgrade")
+        val repo = RustBookRepository(dbPath = dbPath, ioDispatcher = testDispatcher)
+        val settingsRepo = SecureSettingsRepository(
+            prefs = FakePrefs(),
+            cipher = FakeCipher(),
+            ioDispatcher = testDispatcher,
+        )
+
+        val book = repo.createBook(
+            NewBookRequest(
+                title = "金融数式テスト",
+                themePrompt = "債券",
+                genreKey = "tech",
+                genreName = "IT技術",
+                targetAudience = "読者",
+                tone = "明快",
+                targetCharCount = 5_000L,
+                overview = "数式テスト",
+            ),
+        )
+        val detail = repo.saveOutline(
+            book.id,
+            listOf(ChapterPlanDraft(1, "デュレーション", "債券", listOf(SectionPlanDraft(1, "概念", "数式")))),
+        )
+        val secId = detail.chapters.first().sections.first().id
+        val asciidocContent = """
+            *デュレーション分析* では次の式を使う。
+            [stem]
+            ++++
+            D_{mac} = \frac{C}{P}
+            ++++
+        """.trimIndent()
+        // Intentionally store as MARKDOWN to mimic legacy v0.1.0 DB row misclassification
+        repo.upsertSectionContent(secId, asciidocContent, MarkupFormat.MARKDOWN, "legacy_import", "test")
+
+        val vm = ReaderViewModel(
+            bookId = book.id,
+            initialChapterIndex = 0,
+            exportDir = exportDir,
+            repository = repo,
+            settingsRepository = settingsRepo,
+        )
+
+        val parsed = vm.uiState.value.parsedSections.first()
+        assertEquals(MarkupFormat.ASCIIDOC, parsed.format)
+        assertTrue(parsed.blocks.any { it is com.bookgen.app.domain.model.DocBlock.MathBlock })
+        assertTrue(
+            parsed.blocks.filterIsInstance<com.bookgen.app.domain.model.DocBlock.Paragraph>()
+                .none { it.text.contains("[stem]") || it.text.contains("++++") },
+        )
+    }
+
     private class FakeCipher : SecretCipher {
         override fun encrypt(plaintext: String): String =
             Base64.getEncoder().encodeToString(plaintext.toByteArray())

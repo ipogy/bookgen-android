@@ -787,32 +787,12 @@ fn split_chapter_blob_into_sections(raw: &str) -> Vec<(String, String)> {
 }
 
 fn classify_imported_content(content: &str) -> (SectionStatus, MarkupFormat, Option<&'static str>) {
-    let format = detect_markup_format(content);
+    let format = crate::markup::detect_markup_format_for_text_ref(content);
     if content.trim().is_empty() {
         (SectionStatus::Empty, format, None)
     } else {
         (SectionStatus::Completed, format, Some("legacy_import"))
     }
-}
-
-fn detect_markup_format(content: &str) -> MarkupFormat {
-    for line in content.lines() {
-        let t = line.trim_start();
-        if t.starts_with("== ")
-            || t.starts_with("=== ")
-            || t == "----"
-            || t.starts_with("[NOTE]")
-            || t.starts_with("[TIP]")
-            || t.starts_with("[WARNING]")
-            || t.starts_with("[source,")
-        {
-            return MarkupFormat::AsciiDoc;
-        }
-        if t.starts_with("## ") || t.starts_with("### ") || t.starts_with("```") {
-            return MarkupFormat::Markdown;
-        }
-    }
-    MarkupFormat::Markdown
 }
 
 fn load_chapter_blobs_from_disk(

@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bookgen.app.domain.model.AdmonitionKind
 import com.bookgen.app.domain.model.DocBlock
+import com.bookgen.app.domain.model.MarkupFormat
 import com.bookgen.app.domain.model.ReaderAppearance
 import com.bookgen.app.domain.model.ReaderFontChoice
 import com.bookgen.app.ui.theme.BookGenRadius
@@ -51,6 +53,7 @@ fun NativeAstBlockView(
     block: DocBlock,
     appearance: ReaderAppearance,
     modifier: Modifier = Modifier,
+    format: MarkupFormat = MarkupFormat.ASCIIDOC,
     onCopiedCode: () -> Unit = {},
 ) {
     val bodyFamily = when (appearance.fontChoice) {
@@ -63,6 +66,7 @@ fun NativeAstBlockView(
         lineHeight = (appearance.fontSizeSp * appearance.lineHeightMultiplier).sp,
         color = MaterialTheme.colorScheme.onBackground,
     )
+    val richColors = rememberRichTextColors()
 
     when (block) {
         is DocBlock.Heading -> {
@@ -72,8 +76,11 @@ fun NativeAstBlockView(
                 3 -> (appearance.fontSizeSp + 2.5f).sp
                 else -> (appearance.fontSizeSp + 1f).sp
             }
+            val styledHeading = remember(block.text, format, size, richColors) {
+                formatInlineRichText(block.text, format, size, richColors)
+            }
             Text(
-                text = block.text,
+                text = styledHeading,
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontFamily = bodyFamily,
                     fontSize = size,
@@ -88,9 +95,12 @@ fun NativeAstBlockView(
         }
 
         is DocBlock.Paragraph -> {
+            val styledParagraph = remember(block.text, format, appearance.fontSizeSp, richColors) {
+                formatInlineRichText(block.text, format, appearance.fontSizeSp.sp, richColors)
+            }
             SelectionContainer(modifier = modifier.fillMaxWidth()) {
                 Text(
-                    text = block.text,
+                    text = styledParagraph,
                     style = bodyStyle,
                 )
             }
@@ -110,7 +120,9 @@ fun NativeAstBlockView(
                 kind = block.kind,
                 title = block.title,
                 body = block.body,
+                format = format,
                 bodyStyle = bodyStyle,
+                richColors = richColors,
                 modifier = modifier,
             )
         }
@@ -119,26 +131,19 @@ fun NativeAstBlockView(
             AstTableCard(
                 headers = block.headers,
                 rows = block.rows,
+                format = format,
+                richColors = richColors,
                 modifier = modifier,
             )
         }
 
         is DocBlock.MathBlock -> {
-            Surface(
-                modifier = modifier.fillMaxWidth(),
-                shape = BookGenRadius.Control,
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                border = BorderStroke(1.dp, BookGenThemeExtras.colors.borderSubtle),
-            ) {
-                Text(
-                    text = block.latex,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = CodeMonoFontFamily),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                )
-            }
+            NativeMathBlockView(
+                latex = block.latex,
+                baseFontSizeSp = appearance.fontSizeSp,
+                modifier = modifier,
+                onCopiedFormula = onCopiedCode,
+            )
         }
 
         is DocBlock.BulletList -> {
@@ -147,6 +152,9 @@ fun NativeAstBlockView(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 block.items.forEach { item ->
+                    val styledItem = remember(item, format, appearance.fontSizeSp, richColors) {
+                        formatInlineRichText(item, format, appearance.fontSizeSp.sp, richColors)
+                    }
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             text = "•",
@@ -155,7 +163,7 @@ fun NativeAstBlockView(
                             modifier = Modifier.width(18.dp),
                         )
                         Text(
-                            text = item,
+                            text = styledItem,
                             style = bodyStyle,
                             modifier = Modifier.weight(1f),
                         )
@@ -170,6 +178,9 @@ fun NativeAstBlockView(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 block.items.forEachIndexed { idx, item ->
+                    val styledItem = remember(item, format, appearance.fontSizeSp, richColors) {
+                        formatInlineRichText(item, format, appearance.fontSizeSp.sp, richColors)
+                    }
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             text = "${idx + 1}.",
@@ -178,7 +189,7 @@ fun NativeAstBlockView(
                             modifier = Modifier.width(24.dp),
                         )
                         Text(
-                            text = item,
+                            text = styledItem,
                             style = bodyStyle,
                             modifier = Modifier.weight(1f),
                         )
@@ -189,6 +200,9 @@ fun NativeAstBlockView(
 
         is DocBlock.Quote -> {
             val accent = BookGenThemeExtras.colors.borderSubtle
+            val styledQuote = remember(block.text, format, appearance.fontSizeSp, richColors) {
+                formatInlineRichText(block.text, format, appearance.fontSizeSp.sp, richColors)
+            }
             Column(
                 modifier = modifier
                     .fillMaxWidth()
@@ -203,9 +217,8 @@ fun NativeAstBlockView(
                     .padding(start = 18.dp, top = 4.dp, bottom = 4.dp),
             ) {
                 Text(
-                    text = block.text,
+                    text = styledQuote,
                     style = bodyStyle.copy(
-                        fontStyle = FontStyle.Italic,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     ),
                 )
@@ -305,13 +318,18 @@ private fun AdmonitionCard(
     kind: AdmonitionKind,
     title: String?,
     body: String,
+    format: MarkupFormat,
     bodyStyle: TextStyle,
+    richColors: RichTextColors,
     modifier: Modifier = Modifier,
 ) {
     val accent = when (kind) {
         AdmonitionKind.WARNING, AdmonitionKind.CAUTION -> MaterialTheme.colorScheme.secondary
         AdmonitionKind.TIP -> MaterialTheme.colorScheme.tertiary
         AdmonitionKind.NOTE, AdmonitionKind.IMPORTANT -> MaterialTheme.colorScheme.primary
+    }
+    val styledBody = remember(body, format, bodyStyle.fontSize, richColors) {
+        formatInlineRichText(body, format, bodyStyle.fontSize, richColors)
     }
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -337,7 +355,7 @@ private fun AdmonitionCard(
                 color = accent,
             )
             Spacer(Modifier.height(4.dp))
-            Text(text = body, style = bodyStyle)
+            Text(text = styledBody, style = bodyStyle)
         }
     }
 }
@@ -346,9 +364,13 @@ private fun AdmonitionCard(
 private fun AstTableCard(
     headers: List<String>,
     rows: List<List<String>>,
+    format: MarkupFormat,
+    richColors: RichTextColors,
     modifier: Modifier = Modifier,
 ) {
     val border = BookGenThemeExtras.colors.borderSubtle
+    val colCount = headers.size.coerceAtLeast(rows.maxOfOrNull { it.size } ?: 1)
+    val colWidth = if (colCount <= 3) 164.dp else 132.dp
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = BookGenRadius.Control,
@@ -363,12 +385,15 @@ private fun AstTableCard(
             if (headers.isNotEmpty()) {
                 Row(modifier = Modifier.padding(bottom = 6.dp)) {
                     headers.forEach { header ->
+                        val styledHeader = remember(header, format, richColors) {
+                            formatInlineRichText(header, format, 13.sp, richColors)
+                        }
                         Text(
-                            text = header,
+                            text = styledHeader,
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier
-                                .width(136.dp)
+                                .width(colWidth)
                                 .padding(horizontal = 8.dp, vertical = 4.dp),
                         )
                     }
@@ -378,12 +403,15 @@ private fun AstTableCard(
             rows.forEachIndexed { idx, row ->
                 Row(modifier = Modifier.padding(vertical = 4.dp)) {
                     row.forEach { cell ->
+                        val styledCell = remember(cell, format, richColors) {
+                            formatInlineRichText(cell, format, 12.5.sp, richColors)
+                        }
                         Text(
-                            text = cell,
+                            text = styledCell,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier
-                                .width(136.dp)
+                                .width(colWidth)
                                 .padding(horizontal = 8.dp, vertical = 4.dp),
                         )
                     }

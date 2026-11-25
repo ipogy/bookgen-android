@@ -217,9 +217,11 @@ class BookGenComposeUiTest {
                                 sectionNumber = 1,
                                 charCount = 42,
                                 isCompleted = true,
+                                format = MarkupFormat.ASCIIDOC,
                                 blocks = listOf(
                                     DocBlock.Heading(level = 2, text = "安全な FFI 設計"),
-                                    DocBlock.Paragraph("Rust と Kotlin を安全に連携します。"),
+                                    DocBlock.Paragraph("Rust と *デュレーション分析* および [stem]+(100 - 98) \\div 4 = 0.5+ を連携します。"),
+                                    DocBlock.MathBlock(latex = """D = \frac{C}{P}"""),
                                     DocBlock.CodeBlock(language = "rust", code = "pub fn ok() -> u32 { 42 }"),
                                 ),
                             ),
@@ -252,6 +254,9 @@ class BookGenComposeUiTest {
         }
 
         composeRule.onNodeWithText("安全な FFI 設計").assertIsDisplayed()
+        composeRule.onNodeWithText("デュレーション分析", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("÷ 4 = 0.5", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("数式").assertIsDisplayed()
         composeRule.onNodeWithText("pub fn ok() -> u32 { 42 }").assertIsDisplayed()
         composeRule.onNodeWithText("書出し").performClick()
         composeRule.onNodeWithText("EPUB を生成").performClick()

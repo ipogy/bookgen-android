@@ -109,25 +109,80 @@ pub fn sanitize_section_output(raw: String, _format: MarkupFormat) -> String {
 /// Heuristically detects whether text uses AsciiDoc or Markdown conventions.
 #[uniffi::export]
 pub fn detect_markup_format_for_text(content: String) -> MarkupFormat {
+    detect_markup_format_for_text_ref(&content)
+}
+
+/// Borrowed helper so internal callers avoid cloning section strings.
+pub(crate) fn detect_markup_format_for_text_ref(content: &str) -> MarkupFormat {
+    let mut adoc_score: i32 = 0;
+    let mut md_score: i32 = 0;
+    let mut in_fence = false;
+
     for line in content.lines() {
-        let t = line.trim_start();
-        if t.starts_with("== ")
-            || t.starts_with("=== ")
-            || t.starts_with("==== ")
-            || t == "----"
-            || t.starts_with("[source,")
-            || t.starts_with("[NOTE]")
-            || t.starts_with("[TIP]")
-            || t.starts_with("[WARNING]")
-            || t.starts_with("|===")
-        {
-            return MarkupFormat::AsciiDoc;
+        let t = line.trim();
+        if t.starts_with("```") || t.starts_with("~~~") {
+            if !in_fence {
+                md_score += 4;
+            }
+            in_fence = !in_fence;
+            continue;
         }
-        if t.starts_with("## ") || t.starts_with("### ") || t.starts_with("```") {
-            return MarkupFormat::Markdown;
+        if t == "----" || t == "++++" {
+            adoc_score += 4;
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+
+        if parse_asciidoc_heading(t).is_some()
+            || t == "|==="
+            || t == "'''"
+            || t == "____"
+            || t == "===="
+            || parse_asciidoc_source_attr(t).is_some()
+            || is_asciidoc_stem_attr(t)
+            || t.starts_with("[cols=")
+            || t.starts_with("[%header")
+            || t.starts_with("[quote")
+            || parse_asciidoc_admonition_attr(t).is_some()
+        {
+            adoc_score += 4;
+        } else if (t.starts_with(':') && t.ends_with(':') && t.len() >= 3)
+            || parse_asciidoc_inline_admonition(t).is_some()
+        {
+            adoc_score += 2;
+        }
+        if t.contains("[stem:[")
+            || t.contains("stem:[")
+            || t.contains("latexmath:[")
+            || t.contains("[stem]+")
+        {
+            adoc_score += 2;
+        }
+
+        if parse_atx_heading(t).is_some() || t.starts_with("> [!") || is_md_table_sep(t) {
+            md_score += 4;
+        } else if t.starts_with("$$") || t.starts_with(r"\[") || t.contains("**") {
+            md_score += 1;
         }
     }
-    MarkupFormat::Markdown
+
+    if adoc_score > md_score {
+        MarkupFormat::AsciiDoc
+    } else {
+        MarkupFormat::Markdown
+    }
+}
+
+/// Repairs legacy DB sections saved with default Markdown format when text is clearly AsciiDoc.
+pub(crate) fn resolve_section_format(stored: MarkupFormat, content: &str) -> MarkupFormat {
+    if stored == MarkupFormat::Markdown && !content.trim().is_empty() {
+        detect_markup_format_for_text_ref(content)
+    } else {
+        stored
+    }
 }
 
 /// Parses AsciiDoc or Markdown text into structured AST blocks cleanly without panics.
@@ -367,34 +422,9 @@ fn parse_markdown(lines: &[&str]) -> Vec<DocumentBlock> {
             continue;
         }
 
-        // Display math block ($$)
-        if let Some(rest) = trimmed.strip_prefix("$$") {
-            if let Some(inline_end) = rest.strip_suffix("$$").filter(|_| !rest.is_empty()) {
-                blocks.push(DocumentBlock::MathBlock {
-                    latex: inline_end.trim().to_string(),
-                });
-                i += 1;
-                continue;
-            }
-            let mut math_lines = Vec::new();
-            if !rest.trim().is_empty() {
-                math_lines.push(rest.trim());
-            }
-            i += 1;
-            while i < lines.len() {
-                let Some(&inner) = lines.get(i) else {
-                    break;
-                };
-                if inner.trim() == "$$" {
-                    i += 1;
-                    break;
-                }
-                math_lines.push(inner.trim_end());
-                i += 1;
-            }
-            blocks.push(DocumentBlock::MathBlock {
-                latex: math_lines.join("\n"),
-            });
+        // Display math block ($$ ... $$ or \[ ... \])
+        if let Some(math_block) = try_parse_latex_display_math(lines, &mut i) {
+            blocks.push(math_block);
             continue;
         }
 
@@ -522,10 +552,15 @@ fn parse_markdown(lines: &[&str]) -> Vec<DocumentBlock> {
                 || parse_atx_heading(pt).is_some()
                 || parse_md_fence_open(pt).is_some()
                 || pt.starts_with("$$")
+                || pt.starts_with(r"\[")
                 || pt.starts_with('>')
                 || is_horizontal_rule(pt, &['-', '*', '_'])
                 || parse_md_bullet_line(pt).is_some()
                 || parse_numbered_line(pt).is_some()
+                || (pt.contains('|')
+                    && lines
+                        .get(i.saturating_add(1))
+                        .is_some_and(|next| is_md_table_sep(next.trim())))
             {
                 break;
             }
@@ -612,10 +647,14 @@ fn parse_asciidoc(lines: &[&str]) -> Vec<DocumentBlock> {
             continue;
         }
 
-        // Math block: [stem] + ++++ ... ++++
-        if trimmed == "[stem]" || trimmed == "[latexmath]" || trimmed == "++++" {
-            if trimmed != "++++" {
+        // Math block: [stem] / [latexmath] + ++++ ... ++++, bare ++++, or leaked $$ / \[
+        if is_asciidoc_stem_attr(trimmed) || trimmed == "++++" {
+            let had_attr = trimmed != "++++";
+            if had_attr {
                 i += 1;
+                while i < lines.len() && lines.get(i).is_some_and(|l| l.trim().is_empty()) {
+                    i += 1;
+                }
             }
             if lines.get(i).is_some_and(|l| l.trim() == "++++") {
                 i += 1;
@@ -624,7 +663,15 @@ fn parse_asciidoc(lines: &[&str]) -> Vec<DocumentBlock> {
                     let Some(&inner) = lines.get(i) else {
                         break;
                     };
-                    if inner.trim() == "++++" {
+                    let it = inner.trim();
+                    if it == "++++" {
+                        i += 1;
+                        break;
+                    }
+                    if let Some(prefix) = it.strip_suffix("++++") {
+                        if !prefix.trim().is_empty() {
+                            math_lines.push(prefix.trim_end());
+                        }
                         i += 1;
                         break;
                     }
@@ -635,18 +682,28 @@ fn parse_asciidoc(lines: &[&str]) -> Vec<DocumentBlock> {
                     latex: math_lines.join("\n"),
                 });
                 continue;
+            } else if had_attr {
+                // Skip dangling [stem] / [latexmath] attribute without turning it into raw prose.
+                continue;
             }
         }
+        if let Some(math_block) = try_parse_latex_display_math(lines, &mut i) {
+            blocks.push(math_block);
+            continue;
+        }
 
-        // Admonition block: [NOTE] + optional .Title + ==== ... ==== (or inline NOTE: text)
-        if let Some(kind) = parse_asciidoc_admonition_attr(trimmed) {
+        // Admonition block: [NOTE]/[EXAMPLE] + optional .Title + ==== ... ==== (or inline NOTE:/EXAMPLE: text)
+        if let Some((kind, default_title)) = parse_asciidoc_admonition_attr(trimmed) {
             i += 1;
-            let mut title = None;
+            while i < lines.len() && lines.get(i).is_some_and(|l| l.trim().is_empty()) {
+                i += 1;
+            }
+            let mut title = default_title;
             if let Some(&maybe_title) = lines.get(i) {
                 let mt = maybe_title.trim();
                 if let Some(stripped) = mt
                     .strip_prefix('.')
-                    .filter(|s| !s.is_empty() && !s.starts_with(' '))
+                    .filter(|s| !s.is_empty() && !s.starts_with(' ') && !s.starts_with('.'))
                 {
                     title = Some(stripped.to_string());
                     i += 1;
@@ -682,11 +739,21 @@ fn parse_asciidoc(lines: &[&str]) -> Vec<DocumentBlock> {
                 continue;
             }
         }
-        if let Some((kind, inline_body)) = parse_asciidoc_inline_admonition(trimmed) {
+        if let Some((kind, title, inline_body)) = parse_asciidoc_inline_admonition(trimmed) {
             blocks.push(DocumentBlock::Admonition {
                 kind,
-                title: None,
+                title,
                 body: inline_body,
+            });
+            i += 1;
+            continue;
+        }
+
+        // Standalone block title (.Title) right before a table, code block, stem block, or quote
+        if let Some(block_title) = parse_asciidoc_block_title(lines, i) {
+            blocks.push(DocumentBlock::Heading {
+                level: 5,
+                text: block_title,
             });
             i += 1;
             continue;
@@ -724,12 +791,22 @@ fn parse_asciidoc(lines: &[&str]) -> Vec<DocumentBlock> {
         }
 
         // AsciiDoc table |=== ... |===
-        if trimmed.starts_with("[cols=") || trimmed.starts_with("[%header") {
-            i += 1;
+        let mut expected_table_cols: Option<usize> = None;
+        while let Some(&attr_line) = lines.get(i) {
+            let at = attr_line.trim();
+            if at.starts_with("[cols=") || at.starts_with("[%header") {
+                if expected_table_cols.is_none() {
+                    expected_table_cols = parse_asciidoc_cols_count(at);
+                }
+                i += 1;
+            } else {
+                break;
+            }
         }
         if lines.get(i).is_some_and(|l| l.trim() == "|===") {
             i += 1;
             let mut raw_rows: Vec<Vec<String>> = Vec::new();
+            let mut pending_cells: Vec<String> = Vec::new();
             while i < lines.len() {
                 let Some(&inner) = lines.get(i) else {
                     break;
@@ -739,18 +816,50 @@ fn parse_asciidoc(lines: &[&str]) -> Vec<DocumentBlock> {
                     i += 1;
                     break;
                 }
-                if !it.is_empty() {
-                    let cells: Vec<String> = it
-                        .split('|')
-                        .skip(if it.starts_with('|') { 1 } else { 0 })
-                        .map(|c| c.trim().to_string())
-                        .filter(|c| !c.is_empty())
-                        .collect();
-                    if !cells.is_empty() {
-                        raw_rows.push(cells);
+                if it.is_empty() {
+                    if !pending_cells.is_empty() {
+                        let row = std::mem::take(&mut pending_cells);
+                        if expected_table_cols.is_none() && !row.is_empty() {
+                            expected_table_cols = Some(row.len());
+                        }
+                        raw_rows.push(row);
                     }
+                    i += 1;
+                    continue;
+                }
+                if it.starts_with('|') || it.contains('|') {
+                    let cells = split_asciidoc_table_cells(it);
+                    if cells.len() >= 2 {
+                        if !pending_cells.is_empty() {
+                            raw_rows.push(std::mem::take(&mut pending_cells));
+                        }
+                        if expected_table_cols.is_none() {
+                            expected_table_cols = Some(cells.len());
+                        }
+                        raw_rows.push(cells);
+                    } else if let Some(single) = cells.into_iter().next() {
+                        pending_cells.push(single);
+                        if let Some(cols) = expected_table_cols.filter(|&c| c > 1) {
+                            if pending_cells.len() >= cols {
+                                raw_rows.push(std::mem::take(&mut pending_cells));
+                            }
+                        }
+                    }
+                } else if let Some(last_cell) = pending_cells.last_mut() {
+                    if !last_cell.is_empty() {
+                        last_cell.push(' ');
+                    }
+                    last_cell.push_str(it);
+                } else if let Some(last_cell) = raw_rows.last_mut().and_then(|r| r.last_mut()) {
+                    if !last_cell.is_empty() {
+                        last_cell.push(' ');
+                    }
+                    last_cell.push_str(it);
                 }
                 i += 1;
+            }
+            if !pending_cells.is_empty() {
+                raw_rows.push(pending_cells);
             }
             if !raw_rows.is_empty() {
                 let headers = raw_rows.remove(0);
@@ -823,11 +932,21 @@ fn parse_asciidoc(lines: &[&str]) -> Vec<DocumentBlock> {
             if pt.is_empty()
                 || parse_asciidoc_heading(pt).is_some()
                 || pt == "----"
+                || pt == "++++"
                 || pt == "|==="
                 || pt == "'''"
+                || pt == "===="
+                || pt == "____"
+                || pt.starts_with("$$")
+                || pt.starts_with(r"\[")
+                || is_asciidoc_stem_attr(pt)
+                || pt.starts_with("[cols=")
+                || pt.starts_with("[%header")
+                || pt.starts_with("[quote")
                 || parse_asciidoc_source_attr(pt).is_some()
                 || parse_asciidoc_admonition_attr(pt).is_some()
                 || parse_asciidoc_inline_admonition(pt).is_some()
+                || parse_asciidoc_block_title(lines, i).is_some()
                 || parse_asciidoc_bullet(pt).is_some()
                 || parse_asciidoc_numbered(pt).is_some()
             {
@@ -976,31 +1095,165 @@ fn parse_asciidoc_source_attr(trimmed: &str) -> Option<Option<String>> {
     Some(lang)
 }
 
-fn parse_asciidoc_admonition_attr(trimmed: &str) -> Option<AdmonitionKind> {
+fn is_asciidoc_stem_attr(trimmed: &str) -> bool {
+    if trimmed == "[stem]" || trimmed == "[latexmath]" {
+        return true;
+    }
+    (trimmed.starts_with("[stem,") || trimmed.starts_with("[latexmath,")) && trimmed.ends_with(']')
+}
+
+fn try_parse_latex_display_math(lines: &[&str], i: &mut usize) -> Option<DocumentBlock> {
+    try_parse_delimited_math(lines, i, "$$", "$$")
+        .or_else(|| try_parse_delimited_math(lines, i, r"\[", r"\]"))
+}
+
+fn try_parse_delimited_math(
+    lines: &[&str],
+    i: &mut usize,
+    open_delim: &str,
+    close_delim: &str,
+) -> Option<DocumentBlock> {
+    let trimmed = lines.get(*i)?.trim();
+    let rest = trimmed.strip_prefix(open_delim)?;
+    if !rest.is_empty() {
+        if let Some(inline_end) = rest.strip_suffix(close_delim) {
+            *i += 1;
+            return Some(DocumentBlock::MathBlock {
+                latex: inline_end.trim().to_string(),
+            });
+        }
+    }
+    let mut math_lines = Vec::new();
+    if !rest.trim().is_empty() {
+        math_lines.push(rest.trim());
+    }
+    *i += 1;
+    while *i < lines.len() {
+        let Some(&inner) = lines.get(*i) else {
+            break;
+        };
+        let it = inner.trim();
+        if it == close_delim {
+            *i += 1;
+            break;
+        }
+        if let Some(prefix) = it.strip_suffix(close_delim) {
+            if !prefix.trim().is_empty() {
+                math_lines.push(prefix.trim_end());
+            }
+            *i += 1;
+            break;
+        }
+        math_lines.push(inner.trim_end());
+        *i += 1;
+    }
+    Some(DocumentBlock::MathBlock {
+        latex: math_lines.join("\n"),
+    })
+}
+
+fn parse_asciidoc_admonition_attr(trimmed: &str) -> Option<(AdmonitionKind, Option<String>)> {
     match trimmed {
-        "[NOTE]" => Some(AdmonitionKind::Note),
-        "[TIP]" => Some(AdmonitionKind::Tip),
-        "[IMPORTANT]" => Some(AdmonitionKind::Important),
-        "[WARNING]" => Some(AdmonitionKind::Warning),
-        "[CAUTION]" => Some(AdmonitionKind::Caution),
+        "[NOTE]" => Some((AdmonitionKind::Note, None)),
+        "[TIP]" => Some((AdmonitionKind::Tip, None)),
+        "[IMPORTANT]" => Some((AdmonitionKind::Important, None)),
+        "[WARNING]" => Some((AdmonitionKind::Warning, None)),
+        "[CAUTION]" => Some((AdmonitionKind::Caution, None)),
+        "[EXAMPLE]" => Some((AdmonitionKind::Note, Some("EXAMPLE".to_string()))),
         _ => None,
     }
 }
 
-fn parse_asciidoc_inline_admonition(trimmed: &str) -> Option<(AdmonitionKind, String)> {
-    let pairs = [
-        ("NOTE:", AdmonitionKind::Note),
-        ("TIP:", AdmonitionKind::Tip),
-        ("IMPORTANT:", AdmonitionKind::Important),
-        ("WARNING:", AdmonitionKind::Warning),
-        ("CAUTION:", AdmonitionKind::Caution),
+fn parse_asciidoc_inline_admonition(
+    trimmed: &str,
+) -> Option<(AdmonitionKind, Option<String>, String)> {
+    let pairs: [(&str, AdmonitionKind, Option<&str>); 6] = [
+        ("NOTE:", AdmonitionKind::Note, None),
+        ("TIP:", AdmonitionKind::Tip, None),
+        ("IMPORTANT:", AdmonitionKind::Important, None),
+        ("WARNING:", AdmonitionKind::Warning, None),
+        ("CAUTION:", AdmonitionKind::Caution, None),
+        ("EXAMPLE:", AdmonitionKind::Note, Some("EXAMPLE")),
     ];
-    for (prefix, kind) in pairs {
+    for (prefix, kind, default_title) in pairs {
         if let Some(rest) = trimmed.strip_prefix(prefix) {
-            return Some((kind, rest.trim().to_string()));
+            return Some((
+                kind,
+                default_title.map(ToString::to_string),
+                rest.trim().to_string(),
+            ));
         }
     }
     None
+}
+
+fn parse_asciidoc_block_title(lines: &[&str], idx: usize) -> Option<String> {
+    let trimmed = lines.get(idx)?.trim();
+    let stripped = trimmed
+        .strip_prefix('.')
+        .filter(|s| !s.is_empty() && !s.starts_with(' ') && !s.starts_with('.'))?;
+    let mut peek = idx + 1;
+    while peek < lines.len() && lines.get(peek).is_some_and(|l| l.trim().is_empty()) {
+        peek += 1;
+    }
+    let next = lines.get(peek)?.trim();
+    let followed_by_block = next.starts_with("[cols=")
+        || next.starts_with("[%header")
+        || next == "|==="
+        || parse_asciidoc_source_attr(next).is_some()
+        || next == "----"
+        || is_asciidoc_stem_attr(next)
+        || next == "++++"
+        || next.starts_with("[quote")
+        || next == "____"
+        || next == "===="
+        || parse_asciidoc_admonition_attr(next).is_some();
+    followed_by_block.then(|| stripped.trim().to_string())
+}
+
+fn parse_asciidoc_cols_count(attr: &str) -> Option<usize> {
+    let after_eq = attr.split("cols=").nth(1)?;
+    let spec = if let Some(quoted) = after_eq.strip_prefix('"') {
+        quoted.split('"').next()?
+    } else if let Some(quoted) = after_eq.strip_prefix('\'') {
+        quoted.split('\'').next()?
+    } else {
+        after_eq.split([',', ']']).next()?
+    };
+    let clean = spec.trim();
+    if clean.is_empty() {
+        return None;
+    }
+    if clean.contains(',') {
+        return Some(clean.split(',').count());
+    }
+    let prefix_digits: String = clean.chars().take_while(|c| c.is_ascii_digit()).collect();
+    prefix_digits.parse::<usize>().ok().filter(|&n| n > 0)
+}
+
+fn split_asciidoc_table_cells(trimmed: &str) -> Vec<String> {
+    let mut s = trimmed.strip_prefix('|').unwrap_or(trimmed);
+    if !s.ends_with(r"\|") && s.len() > 1 {
+        if let Some(without_trailing) = s.strip_suffix('|') {
+            s = without_trailing;
+        }
+    }
+    let mut cells = Vec::new();
+    let mut current = String::new();
+    let mut chars = s.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' && chars.peek() == Some(&'|') {
+            current.push('|');
+            chars.next();
+        } else if ch == '|' {
+            cells.push(current.trim().to_string());
+            current.clear();
+        } else {
+            current.push(ch);
+        }
+    }
+    cells.push(current.trim().to_string());
+    cells
 }
 
 fn parse_asciidoc_bullet(trimmed: &str) -> Option<&str> {
@@ -1110,5 +1363,85 @@ mod tests {
         assert!(adoc_blocks
             .iter()
             .any(|b| matches!(b, DocumentBlock::NumberedList { items } if items.len() == 2)));
+    }
+
+    #[test]
+    fn parses_real_world_math_tables_admonitions_and_detects_headless_asciidoc() {
+        // Headless legacy DB section (no === heading) with inline *bold*, [stem], multiline |=== table
+        let headless_adoc = "\
+日常の最適化では *最適化への欲求* を言語化する。
+[stem]
+++++
+D_{mac} = \\frac{\\sum_{t=1}^{N} \\frac{t \\cdot C}{(1 + y)^t}}{P}
+++++
+次の式の展開も重要である。
+
+.評価指標の比較一覧
+[cols=\"1,2,2\",options=\"header\"]
+|===
+|概念 |役割 |到達の指標
+
+|パレートフロンティア
+|探索の限界を認識する
+|支配関係が成立しない解集合
+
+|epsilon-パレート最適
+|実用的な停止条件
+|新規支配解の出現が止まる
+|===
+
+EXAMPLE: 価格100円から98円への変動を計算する。";
+
+        assert_eq!(
+            detect_markup_format_for_text(headless_adoc.to_string()),
+            MarkupFormat::AsciiDoc
+        );
+
+        let blocks = parse_markup_blocks(headless_adoc.to_string(), MarkupFormat::AsciiDoc);
+        assert!(blocks
+            .iter()
+            .any(|b| matches!(b, DocumentBlock::Paragraph { text } if text.contains("*最適化への欲求*") && !text.contains("[stem]"))));
+        assert!(blocks
+            .iter()
+            .any(|b| matches!(b, DocumentBlock::MathBlock { latex } if latex.contains("\\frac{\\sum_{t=1}^{N}"))));
+        assert!(blocks
+            .iter()
+            .any(|b| matches!(b, DocumentBlock::Heading { level: 5, text } if text == "評価指標の比較一覧")));
+        assert!(blocks.iter().any(|b| matches!(
+            b,
+            DocumentBlock::Table { headers, rows }
+                if headers == &["概念", "役割", "到達の指標"]
+                    && rows.len() == 2
+                    && rows.first().is_some_and(|r| r == &["パレートフロンティア", "探索の限界を認識する", "支配関係が成立しない解集合"])
+        )));
+        assert!(blocks.iter().any(|b| matches!(
+            b,
+            DocumentBlock::Admonition { kind: AdmonitionKind::Note, title: Some(t), body }
+                if t == "EXAMPLE" && body.contains("100円")
+        )));
+
+        // Markdown with bracket display math \[ ... \], indented $$...$$, and no blank line before math
+        let md_math = "\
+直前の段落テキスト。
+\\[
+R_p = \\sum_{i=1}^{n} w_i R_i
+\\]
+  $$\\text{直接利回り} = \\frac{C}{P}$$
+末尾の解説。";
+        let md_blocks = parse_markup_blocks(md_math.to_string(), MarkupFormat::Markdown);
+        let math_blocks: Vec<&str> = md_blocks
+            .iter()
+            .filter_map(|b| match b {
+                DocumentBlock::MathBlock { latex } => Some(latex.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(math_blocks.len(), 2);
+        assert!(math_blocks
+            .first()
+            .is_some_and(|s| s.contains("R_p = \\sum_{i=1}^{n}")));
+        assert!(math_blocks
+            .get(1)
+            .is_some_and(|s| s.contains("\\frac{C}{P}")));
     }
 }

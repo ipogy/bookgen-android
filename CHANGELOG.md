@@ -5,6 +5,12 @@ All notable changes to `bookgen-android` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-11-25
+
+### Fixed
+- **Markup Parser & Legacy Format Recovery (`bookgen-core`)**: Improved `detect_markup_format_for_text` and unified `importer.rs` format classification to recognize headless AsciiDoc sections (`[stem]`, `++++`, `stem:[...]`, `[stem]+...+`, `|===`, `[cols=]`, `EXAMPLE:`, `TIP:`). Fixed `[stem]` / `[latexmath]` block splitting across inline paragraph boundaries, added Markdown `\[ ... \]` and indented/same-line `$$ ... $$` math parsing, added `.Title` block caption extraction, and fixed multi-line / blank-line-separated AsciiDoc `|===` table cell grouping. Also added `resolve_section_format` in `ReaderViewModel` and EPUB/PDF/Text exporters so previously imported sections auto-recover.
+- **Native Math Renderer & Inline Rich Text Formatting (`Compose`)**: Added `InlineRichTextFormatter` to render AsciiDoc `*bold*` (including Japanese unconstrained boundaries like `*デュレーション分析*` and `後の*アラート閾値設定*`), Markdown `**bold**` / `_italic_`, inline code, and inline math macros (`[stem]+...+`, `[stem:[...]]`, `stem:[...]`, `\( ... \)`, guarded `$...$`). Added `NativeMathBlockView` recursive LaTeX AST renderer supporting 2D stacked `\frac`, summation/limit operators, `\sqrt`, `\begin{cases}`, Unicode math symbols, `BaselineShift` sub/superscripts, and hybrid prose/math `[stem]` blocks.
+
 ## [0.1.0] - 2026-11-25
 
 ### Added

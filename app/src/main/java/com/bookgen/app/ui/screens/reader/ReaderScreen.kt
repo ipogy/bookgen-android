@@ -455,6 +455,7 @@ fun ReaderScreen(
                             NativeAstBlockView(
                                 block = block,
                                 appearance = state.appearance,
+                                format = sec.format,
                             )
                         }
                     }

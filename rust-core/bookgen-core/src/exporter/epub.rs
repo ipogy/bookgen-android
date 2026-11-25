@@ -7,7 +7,7 @@ use zip::{CompressionMethod, ZipWriter};
 
 use crate::error::BookGenError;
 use crate::exporter::check_cancelled;
-use crate::markup::{parse_markup_blocks, DocumentBlock};
+use crate::markup::{parse_markup_blocks, resolve_section_format, DocumentBlock};
 use crate::models::{BookDetail, SectionStatus};
 
 const BOOK_CSS: &str = r#"
@@ -202,7 +202,8 @@ fn render_chapter_xhtml(
 
     for sec in &ch.sections {
         check_cancelled(cancel_flag)?;
-        let blocks = parse_markup_blocks(sec.content.clone(), sec.format);
+        let format = resolve_section_format(sec.format, &sec.content);
+        let blocks = parse_markup_blocks(sec.content.clone(), format);
         let has_heading = matches!(blocks.first(), Some(DocumentBlock::Heading { .. }));
         if !has_heading {
             let _ = writeln!(

@@ -7,6 +7,7 @@ import com.bookgen.app.domain.model.DocBlock
 import com.bookgen.app.domain.model.ExportEvent
 import com.bookgen.app.domain.model.ExportFormatType
 import com.bookgen.app.domain.model.ExportStage
+import com.bookgen.app.domain.model.MarkupFormat
 import com.bookgen.app.domain.model.ReaderAppearance
 import com.bookgen.app.domain.model.ReaderFontChoice
 import com.bookgen.app.domain.model.ThemePreference
@@ -29,6 +30,7 @@ data class ParsedSectionBlocks(
     val sectionNumber: Int,
     val charCount: Long,
     val isCompleted: Boolean,
+    val format: MarkupFormat = MarkupFormat.MARKDOWN,
     val blocks: List<DocBlock>,
 )
 
@@ -309,6 +311,11 @@ class ReaderViewModel(
     private fun parseChapterSections(detail: BookDetail, index: Int): List<ParsedSectionBlocks> {
         val chapterWithSecs = detail.chapters.getOrNull(index) ?: return emptyList()
         return chapterWithSecs.sections.map { sec ->
+            val effectiveFormat = when {
+                sec.content.isBlank() -> sec.format
+                sec.format == MarkupFormat.MARKDOWN -> repository.detectMarkupFormat(sec.content)
+                else -> sec.format
+            }
             ParsedSectionBlocks(
                 sectionId = sec.id,
                 title = sec.title,
@@ -316,7 +323,8 @@ class ReaderViewModel(
                 sectionNumber = sec.sectionNumber,
                 charCount = sec.charCount,
                 isCompleted = sec.status == com.bookgen.app.domain.model.SectionStatus.COMPLETED && sec.content.isNotBlank(),
-                blocks = if (sec.content.isBlank()) emptyList() else repository.parseAstBlocks(sec.content, sec.format),
+                format = effectiveFormat,
+                blocks = if (sec.content.isBlank()) emptyList() else repository.parseAstBlocks(sec.content, effectiveFormat),
             )
         }
     }

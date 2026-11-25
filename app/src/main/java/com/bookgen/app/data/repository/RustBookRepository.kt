@@ -33,6 +33,7 @@ import com.bookgen.core.uniffi.ExportRequest
 import com.bookgen.core.uniffi.ProgressEvent
 import com.bookgen.core.uniffi.classifyEmbedding as rustClassifyEmbedding
 import com.bookgen.core.uniffi.classifyThemeKeywords as rustClassifyThemeKeywords
+import com.bookgen.core.uniffi.detectMarkupFormatForText as rustDetectMarkupFormatForText
 import com.bookgen.core.uniffi.getGenre as rustGetGenre
 import com.bookgen.core.uniffi.listGenres as rustListGenres
 import com.bookgen.core.uniffi.parseMarkupBlocks as rustParseMarkupBlocks
@@ -295,6 +296,9 @@ class RustBookRepository(
 
     override fun sanitizeOutput(raw: String, format: MarkupFormat): String =
         rustSanitizeSectionOutput(raw, format.toRust())
+
+    override fun detectMarkupFormat(content: String): MarkupFormat =
+        rustDetectMarkupFormatForText(content).toDomain()
 
     override fun parseAstBlocks(content: String, format: MarkupFormat): List<DocBlock> =
         rustParseMarkupBlocks(content, format.toRust()).map { it.toDomain() }
