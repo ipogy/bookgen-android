@@ -13,6 +13,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -77,11 +78,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -94,6 +105,7 @@ import com.bookgen.app.domain.model.ExportFormatType
 import com.bookgen.app.domain.model.ReaderFontChoice
 import com.bookgen.app.domain.model.ThemePreference
 import com.bookgen.app.ui.components.EditorialCard
+import com.bookgen.app.ui.components.EditorialTooltipBox
 import com.bookgen.app.ui.components.NativeAstBlockView
 import com.bookgen.app.ui.components.WavyProgressTrack
 import com.bookgen.app.ui.components.formatInlineRichText
@@ -101,6 +113,8 @@ import com.bookgen.app.ui.components.rememberRichTextColors
 import com.bookgen.app.ui.theme.BookGenRadius
 import com.bookgen.app.ui.theme.BookGenTheme
 import com.bookgen.app.ui.theme.BookGenThemeExtras
+import com.bookgen.app.ui.theme.ReaderSerifFontFamily
+import com.bookgen.app.ui.theme.UiSansFontFamily
 import com.bookgen.app.ui.theme.rememberPrefersReducedMotion
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
@@ -108,6 +122,20 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import java.io.File
 import kotlin.math.max
+
+private data class ReaderThemeOption(val preference: ThemePreference, val label: String)
+private data class ReaderFontOption(val choice: ReaderFontChoice, val label: String)
+
+private val READER_THEME_OPTIONS = listOf(
+    ReaderThemeOption(ThemePreference.LIGHT, "Light"),
+    ReaderThemeOption(ThemePreference.SEPIA, "Sepia"),
+    ReaderThemeOption(ThemePreference.DARK, "Dark"),
+)
+
+private val READER_FONT_OPTIONS = listOf(
+    ReaderFontOption(ReaderFontChoice.SERIF, "明朝体 (Serif)"),
+    ReaderFontOption(ReaderFontChoice.SANS, "ゴシック体 (Sans)"),
+)
 
 private class CreateTypedDocumentContract : ActivityResultContract<Pair<String, String>, Uri?>() {
     override fun createIntent(context: Context, input: Pair<String, String>): Intent =
@@ -127,12 +155,14 @@ fun ReaderRoute(
     onBack: () -> Unit,
     onOpenWorkspace: (String) -> Unit,
     onShareExportedFile: ((String, ExportFormatType) -> Unit)? = null,
+    showBackButton: Boolean = true,
+    allowChromeToggle: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var pendingSavePath by remember { mutableStateOf<String?>(null) }
+    var pendingSavePath by rememberSaveable { mutableStateOf<String?>(null) }
 
     val saveToDeviceLauncher = rememberLauncherForActivityResult(
         contract = CreateTypedDocumentContract(),
@@ -190,6 +220,8 @@ fun ReaderRoute(
                 saveToDeviceLauncher.launch(fileName to fmt.mimeType)
             },
             onDismissSnackbar = viewModel::clearSnackbar,
+            showBackButton = showBackButton,
+            allowChromeToggle = allowChromeToggle,
             modifier = modifier,
         )
     }
@@ -217,13 +249,23 @@ fun ReaderScreen(
     onShareExportedFile: ((String, ExportFormatType) -> Unit)?,
     onSaveExportedToDevice: ((String, ExportFormatType) -> Unit)? = null,
     onDismissSnackbar: () -> Unit,
+    showBackButton: Boolean = true,
+    allowChromeToggle: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
+    val copySnackbarScope = rememberCoroutineScope()
+    val readerFocusRequester = remember { FocusRequester() }
     var showTocSheet by rememberSaveable { mutableStateOf(false) }
     var showAppearanceSheet by rememberSaveable { mutableStateOf(false) }
     var showExportSheet by rememberSaveable { mutableStateOf(false) }
     val prefersReducedMotion = rememberPrefersReducedMotion()
+
+    LaunchedEffect(showTocSheet, showAppearanceSheet, showExportSheet) {
+        if (!showTocSheet && !showAppearanceSheet && !showExportSheet) {
+            readerFocusRequester.requestFocus()
+        }
+    }
 
     val detail = state.detail
     val chapters = detail?.chapters.orEmpty()
@@ -233,10 +275,15 @@ fun ReaderScreen(
         1 + state.parsedSections.sumOf { sec -> 1 + if (sec.blocks.isEmpty()) 1 else sec.blocks.size }
     }
 
-    LaunchedEffect(state.currentChapterIndex, state.savedScrollFraction, totalListItems) {
-        val maxIdx = (totalListItems - 1).coerceAtLeast(0)
-        val targetIdx = (maxIdx * state.savedScrollFraction).toInt().coerceIn(0, maxIdx)
-        listState.scrollToItem(targetIdx)
+    val activeChapterKey = "${detail?.summary?.id.orEmpty()}_${state.currentChapterIndex}"
+    var restoredChapterKey by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(activeChapterKey, state.isLoading, state.savedScrollFraction, totalListItems) {
+        if (!state.isLoading && detail != null && restoredChapterKey != activeChapterKey) {
+            val maxIdx = (totalListItems - 1).coerceAtLeast(0)
+            val targetIdx = (maxIdx * state.savedScrollFraction).toInt().coerceIn(0, maxIdx)
+            listState.scrollToItem(targetIdx)
+            restoredChapterKey = activeChapterKey
+        }
     }
 
     LaunchedEffect(listState, state.currentChapterIndex, totalListItems) {
@@ -262,9 +309,72 @@ fun ReaderScreen(
     val chapterProgress = if (chapters.isEmpty()) 0f else {
         (state.currentChapterIndex + 1).toFloat() / chapters.size.toFloat()
     }
+    val effectiveChromeVisible = if (allowChromeToggle) state.chromeVisible else true
 
     Scaffold(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .focusRequester(readerFocusRequester)
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown || event.nativeKeyEvent.repeatCount > 0) {
+                    return@onPreviewKeyEvent false
+                }
+                val sheetOpen = showTocSheet || showAppearanceSheet || showExportSheet
+                when {
+                    event.key == Key.Escape -> {
+                        when {
+                            showExportSheet -> showExportSheet = false
+                            showAppearanceSheet -> showAppearanceSheet = false
+                            showTocSheet -> showTocSheet = false
+                            showBackButton -> onBack()
+                            else -> return@onPreviewKeyEvent false
+                        }
+                        true
+                    }
+                    event.isCtrlPressed && event.key == Key.T -> {
+                        showTocSheet = !showTocSheet
+                        true
+                    }
+                    event.isCtrlPressed && event.key == Key.Comma -> {
+                        showAppearanceSheet = !showAppearanceSheet
+                        true
+                    }
+                    event.isCtrlPressed && event.key == Key.E -> {
+                        showExportSheet = !showExportSheet
+                        true
+                    }
+                    event.isCtrlPressed && (event.key == Key.Equals || event.key == Key.Plus) -> {
+                        onFontSizeChanged((state.appearance.fontSizeSp + 1f).coerceIn(14f, 24f))
+                        true
+                    }
+                    event.isCtrlPressed && event.key == Key.Minus -> {
+                        onFontSizeChanged((state.appearance.fontSizeSp - 1f).coerceIn(14f, 24f))
+                        true
+                    }
+                    event.isCtrlPressed && event.key == Key.Zero -> {
+                        onFontSizeChanged(17f)
+                        true
+                    }
+                    !sheetOpen && !event.isCtrlPressed && event.key == Key.DirectionLeft -> {
+                        if (state.currentChapterIndex > 0) {
+                            onSelectChapter(state.currentChapterIndex - 1)
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    !sheetOpen && !event.isCtrlPressed && event.key == Key.DirectionRight -> {
+                        if (state.currentChapterIndex < chapters.lastIndex) {
+                            onSelectChapter(state.currentChapterIndex + 1)
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    else -> false
+                }
+            },
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
@@ -277,7 +387,7 @@ fun ReaderScreen(
                     trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 )
                 AnimatedVisibility(
-                    visible = state.chromeVisible,
+                    visible = effectiveChromeVisible,
                     enter = if (prefersReducedMotion) EnterTransition.None else slideInVertically { -it },
                     exit = if (prefersReducedMotion) ExitTransition.None else slideOutVertically { -it },
                 ) {
@@ -293,22 +403,32 @@ fun ReaderScreen(
                             )
                         },
                         navigationIcon = {
-                            IconButton(onClick = onBack) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                                    contentDescription = "戻る",
-                                )
+                            if (showBackButton) {
+                                EditorialTooltipBox(label = "戻る", shortcutHint = "Esc") {
+                                    IconButton(onClick = onBack) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                                            contentDescription = "戻る",
+                                        )
+                                    }
+                                }
                             }
                         },
                         actions = {
-                            IconButton(onClick = { showTocSheet = true }) {
-                                Icon(Icons.AutoMirrored.Outlined.List, contentDescription = "目次")
+                            EditorialTooltipBox(label = "目次", shortcutHint = "Ctrl+T") {
+                                IconButton(onClick = { showTocSheet = true }) {
+                                    Icon(Icons.AutoMirrored.Outlined.List, contentDescription = "目次")
+                                }
                             }
-                            IconButton(onClick = { showAppearanceSheet = true }) {
-                                Icon(Icons.Outlined.TextFormat, contentDescription = "表示設定")
+                            EditorialTooltipBox(label = "表示設定", shortcutHint = "Ctrl+,") {
+                                IconButton(onClick = { showAppearanceSheet = true }) {
+                                    Icon(Icons.Outlined.TextFormat, contentDescription = "表示設定")
+                                }
                             }
-                            IconButton(onClick = { showExportSheet = true }) {
-                                Icon(Icons.Outlined.IosShare, contentDescription = "書き出し")
+                            EditorialTooltipBox(label = "書き出し", shortcutHint = "Ctrl+E") {
+                                IconButton(onClick = { showExportSheet = true }) {
+                                    Icon(Icons.Outlined.IosShare, contentDescription = "書き出し")
+                                }
                             }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(
@@ -320,7 +440,7 @@ fun ReaderScreen(
         },
         bottomBar = {
             AnimatedVisibility(
-                visible = state.chromeVisible && chapters.isNotEmpty(),
+                visible = effectiveChromeVisible && chapters.isNotEmpty(),
                 enter = if (prefersReducedMotion) EnterTransition.None else slideInVertically { it },
                 exit = if (prefersReducedMotion) ExitTransition.None else slideOutVertically { it },
             ) {
@@ -381,20 +501,55 @@ fun ReaderScreen(
             return@Scaffold
         }
 
-        val chapterCharSum = state.parsedSections.sumOf { it.charCount }
+        val chapterCharSum = remember(state.parsedSections) {
+            state.parsedSections.sumOf { it.charCount }
+        }
         val estMinutes = max(1, (chapterCharSum / 500L).toInt())
         val richColors = rememberRichTextColors()
+        val extendedColors = BookGenThemeExtras.colors
+        val colorScheme = MaterialTheme.colorScheme
+        val clipboard = LocalClipboard.current
+        val bodyFamily = when (state.appearance.fontChoice) {
+            ReaderFontChoice.SERIF -> ReaderSerifFontFamily
+            ReaderFontChoice.SANS -> UiSansFontFamily
+        }
+        val bodyStyle = remember(
+            bodyFamily,
+            state.appearance.fontSizeSp,
+            state.appearance.lineHeightMultiplier,
+            colorScheme.onBackground,
+        ) {
+            TextStyle(
+                fontFamily = bodyFamily,
+                fontSize = state.appearance.fontSizeSp.sp,
+                lineHeight = (state.appearance.fontSizeSp * state.appearance.lineHeightMultiplier).sp,
+                color = colorScheme.onBackground,
+            )
+        }
+        val onCopiedSnippet = remember(copySnackbarScope, snackbarHostState) {
+            {
+                copySnackbarScope.launch {
+                    snackbarHostState.showSnackbar("クリップボードにコピーしました")
+                }
+                Unit
+            }
+        }
+        val chromeToggleModifier = if (allowChromeToggle) {
+            Modifier.clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClickLabel = if (state.chromeVisible) "ツールバーを隠す" else "ツールバーを表示する",
+                onClick = onToggleChrome,
+            )
+        } else {
+            Modifier
+        }
 
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .consumeWindowInsets(innerPadding)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClickLabel = if (state.chromeVisible) "ツールバーを隠す" else "ツールバーを表示する",
-                    onClick = onToggleChrome,
-                ),
+                .then(chromeToggleModifier),
             contentAlignment = Alignment.TopCenter,
         ) {
             LazyColumn(
@@ -495,6 +650,13 @@ fun ReaderScreen(
                                 block = block,
                                 appearance = state.appearance,
                                 format = sec.format,
+                                bodyFamily = bodyFamily,
+                                colorScheme = colorScheme,
+                                extendedColors = extendedColors,
+                                richColors = richColors,
+                                bodyStyle = bodyStyle,
+                                clipboard = clipboard,
+                                onCopiedCode = onCopiedSnippet,
                             )
                         }
                     }
@@ -616,8 +778,10 @@ private fun TocBottomSheetContent(
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.semantics { heading() },
             )
-            IconButton(onClick = onDismiss) {
-                Icon(Icons.Outlined.Close, contentDescription = "目次を閉じる")
+            EditorialTooltipBox(label = "目次を閉じる") {
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Outlined.Close, contentDescription = "目次を閉じる")
+                }
             }
         }
         HorizontalDivider(color = BookGenThemeExtras.colors.borderSubtle)
@@ -708,37 +872,32 @@ private fun AppearanceBottomSheetContent(
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.semantics { heading() },
             )
-            IconButton(onClick = onDismiss) {
-                Icon(Icons.Outlined.Close, contentDescription = "表示設定を閉じる")
+            EditorialTooltipBox(label = "表示設定を閉じる") {
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Outlined.Close, contentDescription = "表示設定を閉じる")
+                }
             }
         }
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-            listOf(
-                ThemePreference.LIGHT to "Light",
-                ThemePreference.SEPIA to "Sepia",
-                ThemePreference.DARK to "Dark",
-            ).forEachIndexed { idx, (pref, label) ->
+            READER_THEME_OPTIONS.forEachIndexed { idx, option ->
                 SegmentedButton(
-                    selected = app.theme == pref,
-                    onClick = { onThemeSelected(pref) },
-                    shape = SegmentedButtonDefaults.itemShape(idx, 3),
+                    selected = app.theme == option.preference,
+                    onClick = { onThemeSelected(option.preference) },
+                    shape = SegmentedButtonDefaults.itemShape(idx, READER_THEME_OPTIONS.size),
                 ) {
-                    Text(label)
+                    Text(option.label)
                 }
             }
         }
 
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-            listOf(
-                ReaderFontChoice.SERIF to "明朝体 (Serif)",
-                ReaderFontChoice.SANS to "ゴシック体 (Sans)",
-            ).forEachIndexed { idx, (font, label) ->
+            READER_FONT_OPTIONS.forEachIndexed { idx, option ->
                 SegmentedButton(
-                    selected = app.fontChoice == font,
-                    onClick = { onFontSelected(font) },
-                    shape = SegmentedButtonDefaults.itemShape(idx, 2),
+                    selected = app.fontChoice == option.choice,
+                    onClick = { onFontSelected(option.choice) },
+                    shape = SegmentedButtonDefaults.itemShape(idx, READER_FONT_OPTIONS.size),
                 ) {
-                    Text(label)
+                    Text(option.label)
                 }
             }
         }
@@ -819,8 +978,10 @@ private fun ExportBottomSheetContent(
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.semantics { heading() },
             )
-            IconButton(onClick = onDismiss) {
-                Icon(Icons.Outlined.Close, contentDescription = "書き出しを閉じる")
+            EditorialTooltipBox(label = "書き出しを閉じる") {
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Outlined.Close, contentDescription = "書き出しを閉じる")
+                }
             }
         }
 

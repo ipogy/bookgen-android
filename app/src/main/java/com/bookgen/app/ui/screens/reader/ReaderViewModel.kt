@@ -14,12 +14,15 @@ import com.bookgen.app.domain.model.ThemePreference
 import com.bookgen.app.domain.repository.BookRepository
 import com.bookgen.app.domain.repository.SettingsRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 
@@ -64,6 +67,7 @@ class ReaderViewModel(
     private val exportDir: File,
     private val repository: BookRepository,
     private val settingsRepository: SettingsRepository,
+    private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -75,6 +79,7 @@ class ReaderViewModel(
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
 
     private var exportJob: Job? = null
+    private var chapterParseJob: Job? = null
 
     init {
         loadBook()
@@ -99,7 +104,7 @@ class ReaderViewModel(
                 } else {
                     0.0
                 }
-                val parsed = parseChapterSections(detail, chapterIndex)
+                val parsed = withContext(computeDispatcher) { parseChapterSections(detail, chapterIndex) }
                 _uiState.update {
                     it.copy(
                         isLoading = false,
@@ -125,16 +130,17 @@ class ReaderViewModel(
     fun selectChapter(index: Int) {
         val detail = _uiState.value.detail ?: return
         if (index !in detail.chapters.indices) return
-        val parsed = parseChapterSections(detail, index)
-        _uiState.update {
-            it.copy(
-                currentChapterIndex = index,
-                savedScrollFraction = 0.0,
-                parsedSections = parsed,
-            )
-        }
-        val chapter = detail.chapters[index].chapter
-        viewModelScope.launch {
+        chapterParseJob?.cancel()
+        chapterParseJob = viewModelScope.launch {
+            val parsed = withContext(computeDispatcher) { parseChapterSections(detail, index) }
+            _uiState.update {
+                it.copy(
+                    currentChapterIndex = index,
+                    savedScrollFraction = 0.0,
+                    parsedSections = parsed,
+                )
+            }
+            val chapter = detail.chapters[index].chapter
             runCatching {
                 repository.saveReadingProgress(
                     bookId = detail.summary.id,

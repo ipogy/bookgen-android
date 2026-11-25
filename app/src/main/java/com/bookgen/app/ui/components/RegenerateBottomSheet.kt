@@ -83,11 +83,13 @@ fun RegenerateBottomSheet(
                         .weight(1f)
                         .semantics { heading() },
                 )
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.Outlined.Close,
-                        contentDescription = "再生成シートを閉じる",
-                    )
+                EditorialTooltipBox(label = "再生成シートを閉じる") {
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Outlined.Close,
+                            contentDescription = "再生成シートを閉じる",
+                        )
+                    }
                 }
             }
             Text(

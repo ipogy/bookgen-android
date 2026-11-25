@@ -1,5 +1,6 @@
 package com.bookgen.app.ui.screens.wizard
 
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,6 +48,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -59,16 +66,19 @@ import com.bookgen.app.domain.model.GenreInfo
 import com.bookgen.app.domain.model.MarkupFormat
 import com.bookgen.app.ui.components.AiSettingsBottomSheet
 import com.bookgen.app.ui.components.EditorialCard
+import com.bookgen.app.ui.components.EditorialTooltipBox
 import com.bookgen.app.ui.components.GenreBadge
 import com.bookgen.app.ui.theme.BookGenRadius
 import com.bookgen.app.ui.theme.BookGenThemeExtras
 import kotlin.math.roundToInt
 
+private data class SampleThemePreset(val prompt: String, val label: String)
+
 private val TONE_PRESETS = listOf("厳密・論理", "平易・解説", "実践ハンズオン")
 private val SAMPLE_THEMES = listOf(
-    "RustとKotlin Multiplatformで作るモバイルシステム設計" to "技術実務書",
-    "情報処理技術者試験に一発合格するための計算・午後問題攻略" to "資格対策",
-    "海底都市の記録係が失われた設計図を探すSFミステリー" to "小説プロット",
+    SampleThemePreset("RustとKotlin Multiplatformで作るモバイルシステム設計", "技術実務書"),
+    SampleThemePreset("情報処理技術者試験に一発合格するための計算・午後問題攻略", "資格対策"),
+    SampleThemePreset("海底都市の記録係が失われた設計図を探すSFミステリー", "小説プロット"),
 )
 
 @Composable
@@ -127,16 +137,48 @@ fun WizardScreen(
 ) {
     var showSettingsSheet by rememberSaveable { mutableStateOf(false) }
     Scaffold(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown || event.nativeKeyEvent.repeatCount > 0) {
+                    return@onPreviewKeyEvent false
+                }
+                when {
+                    event.isCtrlPressed && (event.key == Key.Enter || event.key == Key.NumPadEnter) -> {
+                        if (!state.isSubmitting && state.themePrompt.isNotBlank()) {
+                            onSubmit()
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    event.isCtrlPressed && event.key == Key.Comma -> {
+                        showSettingsSheet = true
+                        true
+                    }
+                    event.key == Key.Escape -> {
+                        if (showSettingsSheet) {
+                            showSettingsSheet = false
+                        } else {
+                            onBack()
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            },
         topBar = {
             TopAppBar(
                 title = { Text("新しい本を企画") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                            contentDescription = "戻る",
-                        )
+                    EditorialTooltipBox(label = "戻る", shortcutHint = "Esc") {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                                contentDescription = "戻る",
+                            )
+                        }
                     }
                 },
                 actions = {
@@ -153,11 +195,13 @@ fun WizardScreen(
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                         )
                     }
-                    IconButton(onClick = { showSettingsSheet = true }) {
-                        Icon(
-                            imageVector = Icons.Outlined.Tune,
-                            contentDescription = "AIモデル・キー設定",
-                        )
+                    EditorialTooltipBox(label = "AIモデル・キー設定", shortcutHint = "Ctrl+,") {
+                        IconButton(onClick = { showSettingsSheet = true }) {
+                            Icon(
+                                imageVector = Icons.Outlined.Tune,
+                                contentDescription = "AIモデル・キー設定",
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -258,11 +302,11 @@ fun WizardScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            SAMPLE_THEMES.forEach { (sampleText, label) ->
+                            SAMPLE_THEMES.forEach { preset ->
                                 FilterChip(
-                                    selected = state.themePrompt == sampleText,
-                                    onClick = { onThemeChanged(sampleText) },
-                                    label = { Text(label) },
+                                    selected = state.themePrompt == preset.prompt,
+                                    onClick = { onThemeChanged(preset.prompt) },
+                                    label = { Text(preset.label) },
                                     shape = BookGenRadius.Chip,
                                 )
                             }

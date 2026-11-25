@@ -135,8 +135,8 @@ android {
         applicationId = "com.bookgen.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.2.1"
+        versionCode = 5
+        versionName = "0.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -224,6 +224,9 @@ dependencies {
 
     implementation(libs.androidx.navigation3.runtime)
     implementation(libs.androidx.navigation3.ui)
+    implementation(libs.androidx.material3.adaptive)
+    implementation(libs.androidx.material3.adaptive.layout)
+    implementation(libs.androidx.material3.adaptive.navigation3)
     implementation(libs.androidx.lifecycle.viewmodel.navigation3)
     implementation(libs.androidx.work.runtime.ktx)
 

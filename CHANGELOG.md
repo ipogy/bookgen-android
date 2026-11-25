@@ -5,6 +5,22 @@ All notable changes to `bookgen-android` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-11-25
+
+### Added
+- **Adaptive Multi-Pane & Form-Factor Layouts (`adaptive-navigation3`, `ui`)**:
+  - Wired `rememberListDetailSceneStrategy` (`BackNavigationBehavior.PopUntilContentChange`) in `AppNavigation` with `Library` as `listPane` (including an editorial empty-detail placeholder) and `Workspace` / `Reader` as `detailPane`, hiding redundant detail back arrows and split-pane chrome auto-hide when multi-pane mode (`LocalListDetailSceneScope`) is active.
+  - Upgraded `LibraryScreen` (`GridCells.Adaptive(340.dp)`) and `WorkspaceScreen` (`GridCells.Adaptive(380.dp)`) to responsive `LazyVerticalGrid` layouts with `GridItemSpan(maxLineSpan)` headers/banners and `TopAppBarDefaults.enterAlwaysScrollBehavior()`.
+  - Added Material 3 `EditorialTooltipBox` hover/long-press tooltips (with keyboard shortcut hints) across icon-only toolbar, card, math/code copy, and bottom-sheet actions.
+  - Added hardware keyboard shortcuts via `Modifier.onPreviewKeyEvent` across all 4 screens (`Ctrl+F`, `Ctrl+N`, `Ctrl+I`, `Ctrl+,`, `Ctrl+Enter`, `Ctrl+R`, `Ctrl+S`, `Ctrl+T`, `Ctrl+E`, `Ctrl++`/`-`/`0`, `Left`/`Right`, `Esc`) and registered them in `MainActivity.onProvideKeyboardShortcuts`.
+  - Added `FormFactorPreviews` (`Phone`, `Foldable Unfolded`, `Tablet`, `Desktop`) and preserved dialog/menu/sheet/scroll state across configuration changes via `rememberSaveable` and a chapter-keyed initial-scroll restore guard in `ReaderScreen`.
+
+### Changed
+- **Jetpack Compose Performance (`ReaderViewModel`, `NativeAstBlockRenderer`, `NativeMathRenderer`, `screens`)**:
+  - Offloaded `parseChapterSections` Rust AST parsing and markup format resolution onto an injectable `computeDispatcher` (`Dispatchers.Default` by default), cancelling stale in-flight chapter parses on rapid switches.
+  - Replaced per-draw `Path()`/`Stroke()` allocations in `NativeMathRenderer` (`Cases`, `Sqrt`, `OverBar`) and `NativeAstBlockRenderer` (`Quote`, `AdmonitionCard`) with `Modifier.drawWithCache`.
+  - Hoisted `LocalClipboard`, `BookGenThemeExtras.colors`, `MaterialTheme.colorScheme`, `rememberRichTextColors()`, and `TextStyle` above `LazyColumn` / `LazyVerticalGrid` items, memoized `NativeMathBlockView` prose segments and `SearchHitRow` snippets, and replaced temporary `Pair` allocations (`WizardScreen`, `ReaderScreen`) with typed data classes.
+
 ## [0.2.1] - 2026-11-25
 
 ### Added

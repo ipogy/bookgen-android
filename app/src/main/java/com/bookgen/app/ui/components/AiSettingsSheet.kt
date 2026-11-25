@@ -66,13 +66,13 @@ fun AiSettingsBottomSheet(
     onClearKeys: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var geminiKey by remember(currentSettings) { mutableStateOf(currentSettings.geminiApiKey) }
-    var openRouterKey by remember(currentSettings) { mutableStateOf(currentSettings.openRouterApiKey) }
-    var plannerModel by remember(currentSettings) { mutableStateOf(currentSettings.plannerModel) }
-    var writerModel by remember(currentSettings) { mutableStateOf(currentSettings.writerModel) }
-    var embeddingModel by remember(currentSettings) { mutableStateOf(currentSettings.embeddingModel) }
-    var providers by remember(currentSettings) { mutableStateOf(currentSettings.openRouterProviders) }
-    var concurrency by remember(currentSettings) { mutableIntStateOf(currentSettings.maxConcurrency) }
+    var geminiKey by rememberSaveable(currentSettings) { mutableStateOf(currentSettings.geminiApiKey) }
+    var openRouterKey by rememberSaveable(currentSettings) { mutableStateOf(currentSettings.openRouterApiKey) }
+    var plannerModel by rememberSaveable(currentSettings) { mutableStateOf(currentSettings.plannerModel) }
+    var writerModel by rememberSaveable(currentSettings) { mutableStateOf(currentSettings.writerModel) }
+    var embeddingModel by rememberSaveable(currentSettings) { mutableStateOf(currentSettings.embeddingModel) }
+    var providers by rememberSaveable(currentSettings) { mutableStateOf(currentSettings.openRouterProviders) }
+    var concurrency by rememberSaveable(currentSettings) { mutableIntStateOf(currentSettings.maxConcurrency) }
     var revealKeys by rememberSaveable { mutableStateOf(false) }
     var confirmClearKeys by rememberSaveable { mutableStateOf(false) }
 
@@ -102,11 +102,13 @@ fun AiSettingsBottomSheet(
                         .weight(1f)
                         .semantics { heading() },
                 )
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.Outlined.Close,
-                        contentDescription = "設定を閉じる",
-                    )
+                EditorialTooltipBox(label = "設定を閉じる") {
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Outlined.Close,
+                            contentDescription = "設定を閉じる",
+                        )
+                    }
                 }
             }
             Text(
@@ -174,11 +176,15 @@ fun AiSettingsBottomSheet(
                 label = { Text("Gemini API Key (AIza...)") },
                 supportingText = { Text("現在: ${currentSettings.maskedGeminiKey()}") },
                 trailingIcon = {
-                    IconButton(onClick = { revealKeys = !revealKeys }) {
-                        Icon(
-                            imageVector = eyeIcon,
-                            contentDescription = if (revealKeys) "APIキーを隠す" else "APIキーを表示する",
-                        )
+                    EditorialTooltipBox(
+                        label = if (revealKeys) "APIキーを隠す" else "APIキーを表示する",
+                    ) {
+                        IconButton(onClick = { revealKeys = !revealKeys }) {
+                            Icon(
+                                imageVector = eyeIcon,
+                                contentDescription = if (revealKeys) "APIキーを隠す" else "APIキーを表示する",
+                            )
+                        }
                     }
                 },
             )

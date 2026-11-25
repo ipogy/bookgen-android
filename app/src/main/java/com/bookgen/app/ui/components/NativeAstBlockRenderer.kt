@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -28,11 +29,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -42,6 +45,7 @@ import com.bookgen.app.domain.model.DocBlock
 import com.bookgen.app.domain.model.MarkupFormat
 import com.bookgen.app.domain.model.ReaderAppearance
 import com.bookgen.app.domain.model.ReaderFontChoice
+import com.bookgen.app.ui.theme.BookGenExtendedColors
 import com.bookgen.app.ui.theme.BookGenRadius
 import com.bookgen.app.ui.theme.BookGenThemeExtras
 import com.bookgen.app.ui.theme.CodeMonoFontFamily
@@ -55,20 +59,22 @@ fun NativeAstBlockView(
     appearance: ReaderAppearance,
     modifier: Modifier = Modifier,
     format: MarkupFormat = MarkupFormat.ASCIIDOC,
-    onCopiedCode: () -> Unit = {},
-) {
-    val bodyFamily = when (appearance.fontChoice) {
+    bodyFamily: FontFamily = when (appearance.fontChoice) {
         ReaderFontChoice.SERIF -> ReaderSerifFontFamily
         ReaderFontChoice.SANS -> UiSansFontFamily
-    }
-    val bodyStyle = TextStyle(
+    },
+    colorScheme: ColorScheme = MaterialTheme.colorScheme,
+    extendedColors: BookGenExtendedColors = BookGenThemeExtras.colors,
+    richColors: RichTextColors = rememberRichTextColors(),
+    bodyStyle: TextStyle = TextStyle(
         fontFamily = bodyFamily,
         fontSize = appearance.fontSizeSp.sp,
         lineHeight = (appearance.fontSizeSp * appearance.lineHeightMultiplier).sp,
-        color = MaterialTheme.colorScheme.onBackground,
-    )
-    val richColors = rememberRichTextColors()
-
+        color = colorScheme.onBackground,
+    ),
+    clipboard: Clipboard = LocalClipboard.current,
+    onCopiedCode: () -> Unit = {},
+) {
     when (block) {
         is DocBlock.Heading -> {
             val size = when (block.level) {
@@ -88,7 +94,7 @@ fun NativeAstBlockView(
                     lineHeight = (size.value * 1.35f).sp,
                     fontWeight = FontWeight.Bold,
                 ),
-                color = MaterialTheme.colorScheme.onBackground,
+                color = colorScheme.onBackground,
                 modifier = modifier
                     .fillMaxWidth()
                     .padding(top = 12.dp, bottom = 4.dp),
@@ -111,6 +117,8 @@ fun NativeAstBlockView(
             CodeBlockCard(
                 language = block.language,
                 code = block.code,
+                extendedColors = extendedColors,
+                clipboard = clipboard,
                 onCopiedCode = onCopiedCode,
                 modifier = modifier,
             )
@@ -123,6 +131,8 @@ fun NativeAstBlockView(
                 body = block.body,
                 format = format,
                 bodyStyle = bodyStyle,
+                colorScheme = colorScheme,
+                extendedColors = extendedColors,
                 richColors = richColors,
                 modifier = modifier,
             )
@@ -133,6 +143,8 @@ fun NativeAstBlockView(
                 headers = block.headers,
                 rows = block.rows,
                 format = format,
+                colorScheme = colorScheme,
+                extendedColors = extendedColors,
                 richColors = richColors,
                 modifier = modifier,
             )
@@ -143,6 +155,10 @@ fun NativeAstBlockView(
                 latex = block.latex,
                 baseFontSizeSp = appearance.fontSizeSp,
                 modifier = modifier,
+                colorScheme = colorScheme,
+                extendedColors = extendedColors,
+                richColors = richColors,
+                clipboard = clipboard,
                 onCopiedFormula = onCopiedCode,
             )
         }
@@ -160,7 +176,7 @@ fun NativeAstBlockView(
                         Text(
                             text = "•",
                             style = bodyStyle,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = colorScheme.primary,
                             modifier = Modifier.width(18.dp),
                         )
                         Text(
@@ -186,7 +202,7 @@ fun NativeAstBlockView(
                         Text(
                             text = "${idx + 1}.",
                             style = bodyStyle.copy(fontFeatureSettings = "tnum"),
-                            color = MaterialTheme.colorScheme.primary,
+                            color = colorScheme.primary,
                             modifier = Modifier.width(24.dp),
                         )
                         Text(
@@ -200,27 +216,33 @@ fun NativeAstBlockView(
         }
 
         is DocBlock.Quote -> {
-            val accent = BookGenThemeExtras.colors.borderSubtle
+            val accent = extendedColors.borderSubtle
             val styledQuote = remember(block.text, format, appearance.fontSizeSp, richColors) {
                 formatInlineRichText(block.text, format, appearance.fontSizeSp.sp, richColors)
             }
             Column(
                 modifier = modifier
                     .fillMaxWidth()
-                    .drawBehind {
-                        drawLine(
-                            color = accent,
-                            start = Offset(4.dp.toPx(), 4.dp.toPx()),
-                            end = Offset(4.dp.toPx(), size.height - 4.dp.toPx()),
-                            strokeWidth = 3.dp.toPx(),
-                        )
+                    .drawWithCache {
+                        val x = 4.dp.toPx()
+                        val topY = 4.dp.toPx()
+                        val bottomY = (size.height - 4.dp.toPx()).coerceAtLeast(topY)
+                        val strokeW = 3.dp.toPx()
+                        onDrawBehind {
+                            drawLine(
+                                color = accent,
+                                start = Offset(x, topY),
+                                end = Offset(x, bottomY),
+                                strokeWidth = strokeW,
+                            )
+                        }
                     }
                     .padding(start = 18.dp, top = 4.dp, bottom = 4.dp),
             ) {
                 Text(
                     text = styledQuote,
                     style = bodyStyle.copy(
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = colorScheme.onSurfaceVariant,
                     ),
                 )
                 if (!block.attribution.isNullOrBlank()) {
@@ -228,7 +250,7 @@ fun NativeAstBlockView(
                     Text(
                         text = "— ${block.attribution}",
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -239,7 +261,7 @@ fun NativeAstBlockView(
                 modifier = modifier
                     .fillMaxWidth()
                     .padding(vertical = 8.dp),
-                color = BookGenThemeExtras.colors.borderSubtle,
+                color = extendedColors.borderSubtle,
             )
         }
     }
@@ -249,12 +271,13 @@ fun NativeAstBlockView(
 private fun CodeBlockCard(
     language: String?,
     code: String,
+    extendedColors: BookGenExtendedColors,
+    clipboard: Clipboard,
     onCopiedCode: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
-    val extended = BookGenThemeExtras.colors
+    val extended = extendedColors
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -275,21 +298,23 @@ private fun CodeBlockCard(
                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = CodeMonoFontFamily),
                     color = extended.onCodeSurface.copy(alpha = 0.72f),
                 )
-                IconButton(
-                    onClick = {
-                        scope.launch {
-                            clipboard.setClipEntry(
-                                ClipEntry(ClipData.newPlainText("BookGen Code", code)),
-                            )
-                            onCopiedCode()
-                        }
-                    },
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.ContentCopy,
-                        contentDescription = "コードをコピー",
-                        tint = extended.onCodeSurface.copy(alpha = 0.8f),
-                    )
+                EditorialTooltipBox(label = "コードをコピー") {
+                    IconButton(
+                        onClick = {
+                            scope.launch {
+                                clipboard.setClipEntry(
+                                    ClipEntry(ClipData.newPlainText("BookGen Code", code)),
+                                )
+                                onCopiedCode()
+                            }
+                        },
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.ContentCopy,
+                            contentDescription = "コードをコピー",
+                            tint = extended.onCodeSurface.copy(alpha = 0.8f),
+                        )
+                    }
                 }
             }
             Box(
@@ -321,13 +346,15 @@ private fun AdmonitionCard(
     body: String,
     format: MarkupFormat,
     bodyStyle: TextStyle,
+    colorScheme: ColorScheme,
+    extendedColors: BookGenExtendedColors,
     richColors: RichTextColors,
     modifier: Modifier = Modifier,
 ) {
     val accent = when (kind) {
-        AdmonitionKind.WARNING, AdmonitionKind.CAUTION -> MaterialTheme.colorScheme.secondary
-        AdmonitionKind.TIP -> MaterialTheme.colorScheme.tertiary
-        AdmonitionKind.NOTE, AdmonitionKind.IMPORTANT -> MaterialTheme.colorScheme.primary
+        AdmonitionKind.WARNING, AdmonitionKind.CAUTION -> colorScheme.secondary
+        AdmonitionKind.TIP -> colorScheme.tertiary
+        AdmonitionKind.NOTE, AdmonitionKind.IMPORTANT -> colorScheme.primary
     }
     val styledBody = remember(body, format, bodyStyle.fontSize, richColors) {
         formatInlineRichText(body, format, bodyStyle.fontSize, richColors)
@@ -335,18 +362,22 @@ private fun AdmonitionCard(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = BookGenRadius.Control,
-        color = BookGenThemeExtras.colors.admonitionSurface,
+        color = extendedColors.admonitionSurface,
         border = BorderStroke(1.dp, accent.copy(alpha = 0.4f)),
     ) {
         Column(
             modifier = Modifier
-                .drawBehind {
-                    drawLine(
-                        color = accent,
-                        start = Offset(0f, 0f),
-                        end = Offset(0f, size.height),
-                        strokeWidth = 4.dp.toPx(),
-                    )
+                .drawWithCache {
+                    val strokeW = 4.dp.toPx()
+                    val h = size.height
+                    onDrawBehind {
+                        drawLine(
+                            color = accent,
+                            start = Offset(0f, 0f),
+                            end = Offset(0f, h),
+                            strokeWidth = strokeW,
+                        )
+                    }
                 }
                 .padding(start = 16.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
         ) {
@@ -366,16 +397,18 @@ private fun AstTableCard(
     headers: List<String>,
     rows: List<List<String>>,
     format: MarkupFormat,
+    colorScheme: ColorScheme,
+    extendedColors: BookGenExtendedColors,
     richColors: RichTextColors,
     modifier: Modifier = Modifier,
 ) {
-    val border = BookGenThemeExtras.colors.borderSubtle
+    val border = extendedColors.borderSubtle
     val colCount = headers.size.coerceAtLeast(rows.maxOfOrNull { it.size } ?: 1)
     val colWidth = if (colCount <= 3) 164.dp else 132.dp
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = BookGenRadius.Control,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, border),
     ) {
         Column(
@@ -387,7 +420,7 @@ private fun AstTableCard(
                 Row(
                     modifier = Modifier
                         .background(
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            color = colorScheme.surfaceContainerHigh,
                             shape = BookGenRadius.Badge,
                         )
                         .padding(vertical = 4.dp),
@@ -399,7 +432,7 @@ private fun AstTableCard(
                         Text(
                             text = styledHeader,
                             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = colorScheme.onSurface,
                             modifier = Modifier
                                 .width(colWidth)
                                 .padding(horizontal = 8.dp, vertical = 4.dp),

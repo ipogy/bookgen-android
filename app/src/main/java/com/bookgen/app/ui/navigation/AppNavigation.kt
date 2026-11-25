@@ -7,8 +7,28 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
+import androidx.compose.material3.adaptive.navigation.BackNavigationBehavior
+import androidx.compose.material3.adaptive.navigation3.ListDetailSceneStrategy
+import androidx.compose.material3.adaptive.navigation3.LocalListDetailSceneScope
+import androidx.compose.material3.adaptive.navigation3.rememberListDetailSceneStrategy
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.dropUnlessResumed
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
@@ -19,6 +39,7 @@ import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import com.bookgen.app.core.di.AppContainer
+import com.bookgen.app.ui.components.EditorialCard
 import com.bookgen.app.ui.screens.library.LibraryRoute
 import com.bookgen.app.ui.screens.library.LibraryViewModel
 import com.bookgen.app.ui.screens.reader.ReaderRoute
@@ -28,6 +49,7 @@ import com.bookgen.app.ui.screens.wizard.WizardViewModel
 import com.bookgen.app.ui.screens.workspace.WorkspaceRoute
 import com.bookgen.app.ui.screens.workspace.WorkspaceViewModel
 import com.bookgen.app.ui.theme.BookGenMotion
+import com.bookgen.app.ui.theme.BookGenRadius
 import com.bookgen.app.ui.theme.rememberPrefersReducedMotion
 import kotlinx.serialization.Serializable
 
@@ -52,6 +74,7 @@ sealed interface AppRoute : NavKey {
     ) : AppRoute
 }
 
+@OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
 fun BookGenApp(
     container: AppContainer,
@@ -69,6 +92,9 @@ fun BookGenApp(
     } else {
         rememberNavBackStack(AppRoute.LibraryRouteKey)
     }
+    val listDetailStrategy = rememberListDetailSceneStrategy<NavKey>(
+        backNavigationBehavior = BackNavigationBehavior.PopUntilContentChange,
+    )
 
     NavDisplay(
         backStack = backStack,
@@ -77,6 +103,7 @@ fun BookGenApp(
                 backStack.removeLastOrNull()
             }
         },
+        sceneStrategy = listDetailStrategy,
         entryDecorators = listOf(
             rememberSaveableStateHolderNavEntryDecorator(),
             rememberViewModelStoreNavEntryDecorator(),
@@ -92,7 +119,17 @@ fun BookGenApp(
         },
         modifier = modifier,
         entryProvider = entryProvider {
-            entry<AppRoute.LibraryRouteKey> {
+            entry<AppRoute.LibraryRouteKey>(
+                metadata = ListDetailSceneStrategy.listPane(
+                    detailPlaceholder = {
+                        LibraryDetailPlaceholder(
+                            onNewBookClick = dropUnlessResumed {
+                                backStack.navigateSingleTop(AppRoute.WizardRouteKey)
+                            },
+                        )
+                    },
+                ),
+            ) {
                 val vm: LibraryViewModel = viewModel(
                     key = "library",
                 ) {
@@ -109,10 +146,10 @@ fun BookGenApp(
                         backStack.navigateSingleTop(AppRoute.WizardRouteKey)
                     },
                     onOpenWorkspace = { bookId ->
-                        backStack.navigateSingleTop(AppRoute.WorkspaceRouteKey(bookId))
+                        backStack.navigateToRootDetail(AppRoute.WorkspaceRouteKey(bookId))
                     },
                     onOpenReader = { bookId, chapterIndex ->
-                        backStack.navigateSingleTop(
+                        backStack.navigateToRootDetail(
                             AppRoute.ReaderRouteKey(
                                 bookId = bookId,
                                 initialChapterIndex = chapterIndex,
@@ -143,7 +180,10 @@ fun BookGenApp(
                 )
             }
 
-            entry<AppRoute.WorkspaceRouteKey> { key ->
+            entry<AppRoute.WorkspaceRouteKey>(
+                metadata = ListDetailSceneStrategy.detailPane(),
+            ) { key ->
+                val isInMultiPane = LocalListDetailSceneScope.current != null
                 val vm: WorkspaceViewModel = viewModel(
                     key = "workspace_${key.bookId}",
                 ) {
@@ -174,10 +214,15 @@ fun BookGenApp(
                             AppRoute.ReaderRouteKey(bookId = key.bookId, initialChapterIndex = 0),
                         )
                     },
+                    showBackButton = !isInMultiPane,
                 )
             }
 
-            entry<AppRoute.ReaderRouteKey> { key ->
+            entry<AppRoute.ReaderRouteKey>(
+                metadata = ListDetailSceneStrategy.detailPane(),
+            ) { key ->
+                val isInMultiPane = LocalListDetailSceneScope.current != null
+                val cameFromWorkspace = backStack.getOrNull(backStack.lastIndex - 1) is AppRoute.WorkspaceRouteKey
                 val vm: ReaderViewModel = viewModel(
                     key = "reader_${key.bookId}_${key.initialChapterIndex}",
                 ) {
@@ -203,16 +248,75 @@ fun BookGenApp(
                                 backStack.removeLastOrNull()
                             }
                         } else {
-                            backStack.navigateSingleTop(AppRoute.WorkspaceRouteKey(bookId))
+                            backStack.navigateToRootDetail(AppRoute.WorkspaceRouteKey(bookId))
                         }
                     },
+                    showBackButton = !isInMultiPane || cameFromWorkspace,
+                    allowChromeToggle = !isInMultiPane,
                 )
             }
         },
     )
 }
 
+@Composable
+private fun LibraryDetailPlaceholder(
+    onNewBookClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            EditorialCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 460.dp),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Co-Author Studio",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        text = "書籍を選択して執筆・閲覧を開始",
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    Text(
+                        text = "左側のライブラリから書籍を選ぶと、アウトライン編集・並列生成・リーダーをここに表示します。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Button(
+                        onClick = onNewBookClick,
+                        shape = BookGenRadius.Control,
+                    ) {
+                        Text("新しい本を企画")
+                    }
+                }
+            }
+        }
+    }
+}
+
 private fun NavBackStack<NavKey>.navigateSingleTop(target: AppRoute) {
+    if (lastOrNull() != target) {
+        add(target)
+    }
+}
+
+private fun NavBackStack<NavKey>.navigateToRootDetail(target: AppRoute) {
+    if (size == 2 && lastOrNull() == target) return
+    while (size > 1 && lastOrNull() !is AppRoute.WizardRouteKey) {
+        removeLastOrNull()
+    }
     if (lastOrNull() != target) {
         add(target)
     }

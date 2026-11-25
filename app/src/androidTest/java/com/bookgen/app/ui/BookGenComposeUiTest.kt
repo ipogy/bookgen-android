@@ -1,10 +1,17 @@
 package com.bookgen.app.ui
 
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.withKeyDown
 import com.bookgen.app.domain.model.AiSettings
 import com.bookgen.app.domain.model.BookDetail
 import com.bookgen.app.domain.model.BookStatus
@@ -297,6 +304,165 @@ class BookGenComposeUiTest {
         assertEquals(com.bookgen.app.ui.screens.library.LibraryFilter.ALL, resetFilter)
     }
 
+    @Test
+    fun libraryDeleteDialogSurvivesSavedInstanceStateRestoration() {
+        val restorationTester = StateRestorationTester(composeRule)
+        val sampleBook = sampleSummary()
+
+        restorationTester.setContent {
+            BookGenTheme {
+                LibraryScreen(
+                    state = LibraryUiState(
+                        isLoading = false,
+                        books = listOf(sampleBook),
+                        filteredBooks = listOf(sampleBook),
+                        heroBook = sampleBook,
+                    ),
+                    currentTheme = ThemePreference.LIGHT,
+                    aiSettings = AiSettings(),
+                    onNewBookClick = {},
+                    onOpenWorkspace = {},
+                    onOpenReader = { _, _ -> },
+                    onFilterSelected = {},
+                    onSearchQueryChanged = {},
+                    onDeleteBook = {},
+                    onImportDirectory = {},
+                    onThemeSelected = {},
+                    onSaveAiSettings = {},
+                    onClearAiKeys = {},
+                    onDismissMessages = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("「Kotlin と Rust 実践設計」を削除").performClick()
+        composeRule.onNodeWithText("書籍を削除しますか？").assertIsDisplayed()
+
+        restorationTester.emulateSavedInstanceStateRestore()
+        composeRule.onNodeWithText("書籍を削除しますか？").assertIsDisplayed()
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun readerKeyboardShortcutsNavigateChaptersAdjustFontAndToggleToc() {
+        var selectedChapter = -1
+        var updatedFontSize = 17f
+        val detail = sampleMultiChapterDetail()
+
+        composeRule.setContent {
+            BookGenTheme {
+                ReaderScreen(
+                    state = ReaderUiState(
+                        isLoading = false,
+                        detail = detail,
+                        currentChapterIndex = 0,
+                        parsedSections = listOf(
+                            ParsedSectionBlocks(
+                                sectionId = "sec-1",
+                                title = "UniFFI の導入",
+                                chapterNumber = 1,
+                                sectionNumber = 1,
+                                charCount = 42,
+                                isCompleted = true,
+                                format = MarkupFormat.ASCIIDOC,
+                                blocks = listOf(DocBlock.Paragraph("本文サンプル")),
+                            ),
+                        ),
+                        appearance = ReaderAppearance(fontSizeSp = 17f),
+                    ),
+                    onBack = {},
+                    onOpenWorkspace = {},
+                    onSelectChapter = { selectedChapter = it },
+                    onScrollFractionChanged = {},
+                    onToggleChrome = {},
+                    onThemeSelected = {},
+                    onFontSelected = {},
+                    onFontSizeChanged = { updatedFontSize = it },
+                    onLineHeightChanged = {},
+                    onPaddingChanged = {},
+                    onSelectExportFormat = {},
+                    onToggleIncludeToc = {},
+                    onToggleIncludeIncomplete = {},
+                    onStartExport = {},
+                    onCancelExport = {},
+                    onShareExportedFile = null,
+                    onSaveExportedToDevice = null,
+                    onDismissSnackbar = {},
+                )
+            }
+        }
+
+        composeRule.onRoot().performKeyInput {
+            pressKey(Key.DirectionRight)
+        }
+        assertEquals(1, selectedChapter)
+
+        composeRule.onRoot().performKeyInput {
+            withKeyDown(Key.CtrlLeft) {
+                pressKey(Key.Equals)
+            }
+        }
+        assertEquals(18f, updatedFontSize, 0.01f)
+
+        composeRule.onRoot().performKeyInput {
+            withKeyDown(Key.CtrlLeft) {
+                pressKey(Key.T)
+            }
+        }
+        composeRule.onNodeWithText("目次 (2章)").assertIsDisplayed()
+
+        composeRule.onRoot().performKeyInput {
+            pressKey(Key.Escape)
+        }
+        composeRule.onNodeWithText("目次 (2章)").assertDoesNotExist()
+    }
+
+    @Test
+    fun multiPaneDetailModeHidesBackButtonInWorkspaceAndReader() {
+        val detail = sampleDetail()
+        composeRule.setContent {
+            BookGenTheme {
+                WorkspaceScreen(
+                    state = WorkspaceUiState(
+                        isLoading = false,
+                        detail = detail,
+                    ),
+                    aiSettings = AiSettings(),
+                    onBack = {},
+                    onOpenReader = {},
+                    onToggleChapter = {},
+                    onToggleStreamDrawer = {},
+                    onMoveChapterUp = {},
+                    onMoveChapterDown = {},
+                    onMoveSectionUp = { _, _ -> },
+                    onMoveSectionDown = { _, _ -> },
+                    onAddChapter = { _, _ -> },
+                    onEditChapterMeta = { _, _, _ -> },
+                    onAddSection = { _, _, _ -> },
+                    onDeleteSection = {},
+                    onEditSectionClick = {},
+                    onDismissSectionEditor = {},
+                    onSaveSection = { _, _, _, _ -> },
+                    onRestoreRevision = { _, _ -> },
+                    onRegenerateSection = {},
+                    onRegenerateChapter = {},
+                    onDismissRegenSheet = {},
+                    onConfirmRegen = { _, _ -> },
+                    onStartOrResumePipeline = {},
+                    onPausePipeline = {},
+                    onOpenApiSettings = {},
+                    onDismissApiSettings = {},
+                    onSaveAiSettings = {},
+                    onClearAiKeys = {},
+                    onDismissSnackbar = {},
+                    showBackButton = false,
+                )
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("戻る").assertDoesNotExist()
+    }
+
     private fun sampleSummary() = BookSummary(
         id = "book-1",
         title = "Kotlin と Rust 実践設計",
@@ -351,5 +517,33 @@ class BookGenComposeUiTest {
                 ),
             ),
         )
+    }
+
+    private fun sampleMultiChapterDetail(): BookDetail {
+        val first = sampleDetail()
+        val ch2 = ChapterWithSections(
+            chapter = ChapterRecord("ch-2", "book-1", 2, 1, "高度な最適化", "Compose"),
+            sections = listOf(
+                SectionRecord(
+                    id = "sec-2",
+                    chapterId = "ch-2",
+                    bookId = "book-1",
+                    chapterNumber = 2,
+                    sectionNumber = 1,
+                    position = 0,
+                    title = "drawWithCache",
+                    keyFocus = "描画最適化",
+                    format = MarkupFormat.ASCIIDOC,
+                    content = "== 描画キャッシュ",
+                    status = SectionStatus.COMPLETED,
+                    errorMessage = null,
+                    wordCount = 12,
+                    charCount = 30,
+                    revisionCount = 1,
+                    updatedAt = "",
+                ),
+            ),
+        )
+        return first.copy(chapters = first.chapters + ch2)
     }
 }

@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -29,7 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -38,6 +39,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -53,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.bookgen.app.domain.model.MarkupFormat
+import com.bookgen.app.ui.theme.BookGenExtendedColors
 import com.bookgen.app.ui.theme.BookGenRadius
 import com.bookgen.app.ui.theme.BookGenThemeExtras
 import com.bookgen.app.ui.theme.CodeMonoFontFamily
@@ -550,14 +553,16 @@ fun NativeMathBlockView(
     latex: String,
     baseFontSizeSp: Float,
     modifier: Modifier = Modifier,
+    colorScheme: ColorScheme = MaterialTheme.colorScheme,
+    extendedColors: BookGenExtendedColors = BookGenThemeExtras.colors,
+    richColors: RichTextColors = rememberRichTextColors(),
+    clipboard: Clipboard = LocalClipboard.current,
     onCopiedFormula: () -> Unit = {},
 ) {
     val segments = remember(latex) { parseMathBlockSegments(latex) }
-    val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
-    val scheme = MaterialTheme.colorScheme
-    val extended = BookGenThemeExtras.colors
-    val richColors = rememberRichTextColors()
+    val scheme = colorScheme
+    val extended = extendedColors
     val isPureProseStem = remember(segments) {
         segments.isNotEmpty() && segments.all { it is MathSegment.Prose || it is MathSegment.BlankSpacer }
     }
@@ -594,21 +599,23 @@ fun NativeMathBlockView(
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                     color = scheme.primary,
                 )
-                IconButton(
-                    onClick = {
-                        scope.launch {
-                            clipboard.setClipEntry(
-                                ClipEntry(ClipData.newPlainText("BookGen Formula", latex)),
-                            )
-                            onCopiedFormula()
-                        }
-                    },
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.ContentCopy,
-                        contentDescription = "数式をコピー",
-                        tint = scheme.onSurfaceVariant.copy(alpha = 0.78f),
-                    )
+                EditorialTooltipBox(label = "数式をコピー") {
+                    IconButton(
+                        onClick = {
+                            scope.launch {
+                                clipboard.setClipEntry(
+                                    ClipEntry(ClipData.newPlainText("BookGen Formula", latex)),
+                                )
+                                onCopiedFormula()
+                            }
+                        },
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.ContentCopy,
+                            contentDescription = "数式をコピー",
+                            tint = scheme.onSurfaceVariant.copy(alpha = 0.78f),
+                        )
+                    }
                 }
             }
 
@@ -622,14 +629,17 @@ fun NativeMathBlockView(
                     when (segment) {
                         MathSegment.BlankSpacer -> Spacer(Modifier.height(4.dp))
                         is MathSegment.Prose -> {
+                            val styledProse = remember(segment.text, baseFontSizeSp, richColors) {
+                                formatInlineRichText(
+                                    raw = segment.text,
+                                    format = MarkupFormat.ASCIIDOC,
+                                    baseFontSize = baseFontSizeSp.sp,
+                                    colors = richColors,
+                                )
+                            }
                             SelectionContainer {
                                 Text(
-                                    text = formatInlineRichText(
-                                        raw = segment.text,
-                                        format = MarkupFormat.ASCIIDOC,
-                                        baseFontSize = baseFontSizeSp.sp,
-                                        colors = richColors,
-                                    ),
+                                    text = styledProse,
                                     style = TextStyle(
                                         fontFamily = ReaderSerifFontFamily,
                                         fontSize = (baseFontSizeSp * 0.94f).sp,
@@ -759,13 +769,19 @@ private fun MathNodeView(
                 )
                 Box(
                     modifier = Modifier
-                        .drawBehind {
-                            drawLine(
-                                color = textColor.copy(alpha = 0.85f),
-                                start = Offset(0f, 1.dp.toPx()),
-                                end = Offset(size.width, 1.dp.toPx()),
-                                strokeWidth = 1.2.dp.toPx(),
-                            )
+                        .drawWithCache {
+                            val lineColor = textColor.copy(alpha = 0.85f)
+                            val y = 1.dp.toPx()
+                            val strokeW = 1.2.dp.toPx()
+                            val endX = size.width
+                            onDrawBehind {
+                                drawLine(
+                                    color = lineColor,
+                                    start = Offset(0f, y),
+                                    end = Offset(endX, y),
+                                    strokeWidth = strokeW,
+                                )
+                            }
                         }
                         .padding(top = 3.dp, start = 2.dp, end = 3.dp),
                 ) {
@@ -784,7 +800,7 @@ private fun MathNodeView(
                     modifier = Modifier
                         .width(14.dp)
                         .fillMaxHeight()
-                        .drawBehind {
+                        .drawWithCache {
                             val w = size.width
                             val h = size.height.coerceAtLeast(24.dp.toPx())
                             val midY = h / 2f
@@ -793,11 +809,19 @@ private fun MathNodeView(
                                 cubicTo(w * 0.35f, 2f, w * 0.55f, midY * 0.88f, w * 0.14f, midY)
                                 cubicTo(w * 0.55f, midY * 1.12f, w * 0.35f, h - 2f, w * 0.88f, h - 2f)
                             }
-                            drawPath(
-                                path = path,
-                                color = textColor.copy(alpha = 0.85f),
-                                style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
+                            val stroke = Stroke(
+                                width = 1.5.dp.toPx(),
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round,
                             )
+                            val braceColor = textColor.copy(alpha = 0.85f)
+                            onDrawBehind {
+                                drawPath(
+                                    path = path,
+                                    color = braceColor,
+                                    style = stroke,
+                                )
+                            }
                         },
                 )
                 Column(
@@ -820,13 +844,19 @@ private fun MathNodeView(
         is MathNode.OverBar -> {
             Box(
                 modifier = Modifier
-                    .drawBehind {
-                        drawLine(
-                            color = textColor.copy(alpha = 0.85f),
-                            start = Offset(0f, 1.dp.toPx()),
-                            end = Offset(size.width, 1.dp.toPx()),
-                            strokeWidth = 1.1.dp.toPx(),
-                        )
+                    .drawWithCache {
+                        val lineColor = textColor.copy(alpha = 0.85f)
+                        val y = 1.dp.toPx()
+                        val strokeW = 1.1.dp.toPx()
+                        val endX = size.width
+                        onDrawBehind {
+                            drawLine(
+                                color = lineColor,
+                                start = Offset(0f, y),
+                                end = Offset(endX, y),
+                                strokeWidth = strokeW,
+                            )
+                        }
                     }
                     .padding(top = 3.dp),
             ) {

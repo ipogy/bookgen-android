@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,8 +24,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -74,6 +76,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -89,6 +98,7 @@ import com.bookgen.app.domain.model.SectionRecord
 import com.bookgen.app.domain.model.SectionRevision
 import com.bookgen.app.ui.components.AiSettingsBottomSheet
 import com.bookgen.app.ui.components.EditorialCard
+import com.bookgen.app.ui.components.EditorialTooltipBox
 import com.bookgen.app.ui.components.RegenerateBottomSheet
 import com.bookgen.app.ui.components.SectionStatusChip
 import com.bookgen.app.ui.components.WavyProgressTrack
@@ -103,6 +113,7 @@ fun WorkspaceRoute(
     viewModel: WorkspaceViewModel,
     onBack: () -> Unit,
     onOpenReader: () -> Unit,
+    showBackButton: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -156,6 +167,7 @@ fun WorkspaceRoute(
         onSaveAiSettings = viewModel::saveAiSettings,
         onClearAiKeys = viewModel::clearAiKeys,
         onDismissSnackbar = viewModel::clearSnackbar,
+        showBackButton = showBackButton,
         modifier = modifier,
     )
 }
@@ -192,13 +204,15 @@ fun WorkspaceScreen(
     onSaveAiSettings: (AiSettings) -> Unit,
     onClearAiKeys: () -> Unit,
     onDismissSnackbar: () -> Unit,
+    showBackButton: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     var showAddChapterDialog by rememberSaveable { mutableStateOf(false) }
-    var chapterForNewSection by remember { mutableStateOf<String?>(null) }
-    var editingChapter by remember { mutableStateOf<ChapterWithSections?>(null) }
-    var deleteCandidateSection by remember { mutableStateOf<SectionRecord?>(null) }
+    var chapterForNewSection by rememberSaveable { mutableStateOf<String?>(null) }
+    var editingChapterId by rememberSaveable { mutableStateOf<String?>(null) }
+    var deleteCandidateSectionId by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(state.snackbarMessage) {
         val msg = state.snackbarMessage
@@ -210,9 +224,65 @@ fun WorkspaceScreen(
 
     val summary = state.detail?.summary
     val chapters = state.detail?.chapters.orEmpty()
+    val editingChapter = remember(editingChapterId, chapters) {
+        editingChapterId?.let { id -> chapters.firstOrNull { it.chapter.id == id } }
+    }
+    val deleteCandidateSection = remember(deleteCandidateSectionId, chapters) {
+        deleteCandidateSectionId?.let { id ->
+            chapters.asSequence().flatMap { it.sections }.firstOrNull { it.id == id }
+        }
+    }
 
     Scaffold(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .nestedScroll(scrollBehavior.nestedScrollConnection)
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown || event.nativeKeyEvent.repeatCount > 0) {
+                    return@onPreviewKeyEvent false
+                }
+                val modalOpen = showAddChapterDialog ||
+                    chapterForNewSection != null ||
+                    editingChapterId != null ||
+                    deleteCandidateSectionId != null ||
+                    state.editingSection != null ||
+                    state.showApiSettingsSheet ||
+                    state.regenTarget != null
+                when {
+                    event.key == Key.Escape -> {
+                        when {
+                            deleteCandidateSectionId != null -> deleteCandidateSectionId = null
+                            editingChapterId != null -> editingChapterId = null
+                            chapterForNewSection != null -> chapterForNewSection = null
+                            showAddChapterDialog -> showAddChapterDialog = false
+                            state.showApiSettingsSheet -> onDismissApiSettings()
+                            state.regenTarget != null -> onDismissRegenSheet()
+                            state.editingSection != null -> onDismissSectionEditor()
+                            showBackButton -> onBack()
+                            else -> return@onPreviewKeyEvent false
+                        }
+                        true
+                    }
+                    !modalOpen && event.isCtrlPressed && event.key == Key.N -> {
+                        showAddChapterDialog = true
+                        true
+                    }
+                    !modalOpen && event.isCtrlPressed && event.key == Key.R -> {
+                        onOpenReader()
+                        true
+                    }
+                    !modalOpen && event.isCtrlPressed && event.key == Key.Comma -> {
+                        onOpenApiSettings()
+                        true
+                    }
+                    !modalOpen && event.isCtrlPressed && (event.key == Key.Enter || event.key == Key.NumPadEnter) -> {
+                        if (state.isGenerating) onPausePipeline() else onStartOrResumePipeline()
+                        true
+                    }
+                    else -> false
+                }
+            },
         topBar = {
             TopAppBar(
                 title = {
@@ -222,32 +292,43 @@ fun WorkspaceScreen(
                         overflow = TextOverflow.Ellipsis,
                     )
                 },
+                scrollBehavior = scrollBehavior,
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                            contentDescription = "戻る",
-                        )
+                    if (showBackButton) {
+                        EditorialTooltipBox(label = "戻る", shortcutHint = "Esc") {
+                            IconButton(onClick = onBack) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                                    contentDescription = "戻る",
+                                )
+                            }
+                        }
                     }
                 },
                 actions = {
-                    IconButton(onClick = onOpenApiSettings) {
-                        Icon(
-                            imageVector = Icons.Outlined.Tune,
-                            contentDescription = "AIモデル・キー設定",
-                        )
+                    EditorialTooltipBox(label = "AIモデル・キー設定", shortcutHint = "Ctrl+,") {
+                        IconButton(onClick = onOpenApiSettings) {
+                            Icon(
+                                imageVector = Icons.Outlined.Tune,
+                                contentDescription = "AIモデル・キー設定",
+                            )
+                        }
                     }
-                    IconButton(onClick = { showAddChapterDialog = true }) {
-                        Icon(
-                            imageVector = Icons.Outlined.Add,
-                            contentDescription = "章を追加",
-                        )
+                    EditorialTooltipBox(label = "章を追加", shortcutHint = "Ctrl+N") {
+                        IconButton(onClick = { showAddChapterDialog = true }) {
+                            Icon(
+                                imageVector = Icons.Outlined.Add,
+                                contentDescription = "章を追加",
+                            )
+                        }
                     }
-                    IconButton(onClick = onOpenReader) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.MenuBook,
-                            contentDescription = "リーダーで読む",
-                        )
+                    EditorialTooltipBox(label = "リーダーで読む", shortcutHint = "Ctrl+R") {
+                        IconButton(onClick = onOpenReader) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.MenuBook,
+                                contentDescription = "リーダーで読む",
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -283,19 +364,25 @@ fun WorkspaceScreen(
                 .consumeWindowInsets(innerPadding),
             contentAlignment = Alignment.TopCenter,
         ) {
-            LazyColumn(
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 380.dp),
                 modifier = Modifier
                     .fillMaxSize()
-                    .widthIn(max = 720.dp),
+                    .widthIn(max = 1040.dp),
                 contentPadding = PaddingValues(
                     start = 16.dp,
                     end = 16.dp,
                     top = innerPadding.calculateTopPadding() + 6.dp,
                     bottom = innerPadding.calculateBottomPadding() + 28.dp,
                 ),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                item(key = "pipeline_status", contentType = "pipeline_status") {
+                item(
+                    key = "pipeline_status",
+                    contentType = "pipeline_status",
+                    span = { GridItemSpan(maxLineSpan) },
+                ) {
                     if (summary != null) {
                         PipelineStatusCard(
                             completed = summary.completedSections,
@@ -310,7 +397,11 @@ fun WorkspaceScreen(
                     }
                 }
 
-                item(key = "live_stream_drawer", contentType = "live_stream_drawer") {
+                item(
+                    key = "live_stream_drawer",
+                    contentType = "live_stream_drawer",
+                    span = { GridItemSpan(maxLineSpan) },
+                ) {
                     LiveStreamConsoleDrawer(
                         expanded = state.streamDrawerExpanded,
                         activeLabel = state.activeWritingLabel,
@@ -319,11 +410,12 @@ fun WorkspaceScreen(
                     )
                 }
 
-                itemsIndexed(
-                    items = chapters,
-                    key = { _, item -> item.chapter.id },
-                    contentType = { _, _ -> "chapter_card" },
-                ) { index, chWithSecs ->
+                items(
+                    count = chapters.size,
+                    key = { index -> chapters[index].chapter.id },
+                    contentType = { "chapter_card" },
+                ) { index ->
+                    val chWithSecs = chapters[index]
                     val isExpanded = chWithSecs.chapter.id in state.expandedChapterIds
                     ChapterOutlineCard(
                         chapterWithSections = chWithSecs,
@@ -333,14 +425,14 @@ fun WorkspaceScreen(
                         onToggleExpand = { onToggleChapter(chWithSecs.chapter.id) },
                         onMoveUp = { onMoveChapterUp(index) },
                         onMoveDown = { onMoveChapterDown(index) },
-                        onEditChapter = { editingChapter = chWithSecs },
+                        onEditChapter = { editingChapterId = chWithSecs.chapter.id },
                         onAddSection = { chapterForNewSection = chWithSecs.chapter.id },
                         onMoveSectionUp = { secIdx -> onMoveSectionUp(chWithSecs.chapter.id, secIdx) },
                         onMoveSectionDown = { secIdx -> onMoveSectionDown(chWithSecs.chapter.id, secIdx) },
                         onEditSection = onEditSectionClick,
                         onRegenerateChapter = { onRegenerateChapter(chWithSecs) },
                         onRegenerateSection = onRegenerateSection,
-                        onRequestDeleteSection = { sec -> deleteCandidateSection = sec },
+                        onRequestDeleteSection = { sec -> deleteCandidateSectionId = sec.id },
                     )
                 }
             }
@@ -384,9 +476,9 @@ fun WorkspaceScreen(
             initialFocus = ch.chapter.focusArea,
             titleLabel = "章タイトル",
             focusLabel = "章の重点方針",
-            onDismiss = { editingChapter = null },
+            onDismiss = { editingChapterId = null },
             onConfirm = { t, f ->
-                editingChapter = null
+                editingChapterId = null
                 onEditChapterMeta(ch.chapter.id, t, f)
             },
         )
@@ -426,7 +518,7 @@ fun WorkspaceScreen(
 
     deleteCandidateSection?.let { victim ->
         AlertDialog(
-            onDismissRequest = { deleteCandidateSection = null },
+            onDismissRequest = { deleteCandidateSectionId = null },
             title = { Text("節を削除しますか？") },
             text = {
                 Text("「${victim.chapterNumber}.${victim.sectionNumber} ${victim.title}」と執筆済み本文が削除されます。")
@@ -435,7 +527,7 @@ fun WorkspaceScreen(
                 Button(
                     onClick = {
                         onDeleteSection(victim.id)
-                        deleteCandidateSection = null
+                        deleteCandidateSectionId = null
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error,
@@ -446,7 +538,7 @@ fun WorkspaceScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { deleteCandidateSection = null }) {
+                TextButton(onClick = { deleteCandidateSectionId = null }) {
                     Text("キャンセル")
                 }
             },
@@ -611,7 +703,7 @@ private fun ChapterOutlineCard(
     onRequestDeleteSection: (SectionRecord) -> Unit,
 ) {
     val ch = chapterWithSections.chapter
-    var showChapterMenu by remember { mutableStateOf(false) }
+    var showChapterMenu by rememberSaveable(ch.id) { mutableStateOf(false) }
 
     EditorialCard(
         modifier = Modifier.fillMaxWidth(),
@@ -659,15 +751,19 @@ private fun ChapterOutlineCard(
                     }
                 }
             }
-            IconButton(onClick = onRegenerateChapter) {
-                Icon(Icons.Outlined.AutoFixHigh, contentDescription = "この章を再生成・トーン調整")
+            EditorialTooltipBox(label = "この章を再生成・トーン調整") {
+                IconButton(onClick = onRegenerateChapter) {
+                    Icon(Icons.Outlined.AutoFixHigh, contentDescription = "この章を再生成・トーン調整")
+                }
             }
             Box {
-                IconButton(onClick = { showChapterMenu = true }) {
-                    Icon(
-                        imageVector = Icons.Outlined.MoreVert,
-                        contentDescription = "第${ch.chapterNumber}章の操作メニュー",
-                    )
+                EditorialTooltipBox(label = "第${ch.chapterNumber}章の操作メニュー") {
+                    IconButton(onClick = { showChapterMenu = true }) {
+                        Icon(
+                            imageVector = Icons.Outlined.MoreVert,
+                            contentDescription = "第${ch.chapterNumber}章の操作メニュー",
+                        )
+                    }
                 }
                 DropdownMenu(
                     expanded = showChapterMenu,
@@ -759,7 +855,7 @@ private fun SectionOutlineRow(
     onRegenerate: () -> Unit,
     onDeleteRequest: () -> Unit,
 ) {
-    var showSectionMenu by remember { mutableStateOf(false) }
+    var showSectionMenu by rememberSaveable(section.id) { mutableStateOf(false) }
 
     Row(
         modifier = Modifier
@@ -786,11 +882,13 @@ private fun SectionOutlineRow(
             )
         }
         Box {
-            IconButton(onClick = { showSectionMenu = true }) {
-                Icon(
-                    imageVector = Icons.Outlined.MoreVert,
-                    contentDescription = "「${section.title}」の操作メニュー",
-                )
+            EditorialTooltipBox(label = "操作メニュー") {
+                IconButton(onClick = { showSectionMenu = true }) {
+                    Icon(
+                        imageVector = Icons.Outlined.MoreVert,
+                        contentDescription = "「${section.title}」の操作メニュー",
+                    )
+                }
             }
             DropdownMenu(
                 expanded = showSectionMenu,
@@ -911,7 +1009,7 @@ private fun SectionEditorDialog(
     var title by rememberSaveable(section.id) { mutableStateOf(section.title) }
     var content by rememberSaveable(section.id, section.revisionCount) { mutableStateOf(section.content) }
     var showRevisions by rememberSaveable { mutableStateOf(false) }
-    var confirmDiscard by remember { mutableStateOf(false) }
+    var confirmDiscard by rememberSaveable { mutableStateOf(false) }
     val hasUnsavedChanges = title != section.title || content != section.content
 
     val handleRequestClose = {
@@ -924,6 +1022,19 @@ private fun SectionEditorDialog(
 
     AlertDialog(
         onDismissRequest = handleRequestClose,
+        modifier = Modifier.onPreviewKeyEvent { event ->
+            if (event.type == KeyEventType.KeyDown &&
+                event.nativeKeyEvent.repeatCount == 0 &&
+                event.isCtrlPressed &&
+                event.key == Key.S &&
+                title.isNotBlank()
+            ) {
+                onSave(title, content, section.format)
+                true
+            } else {
+                false
+            }
+        },
         title = {
             Row(
                 modifier = Modifier.fillMaxWidth(),

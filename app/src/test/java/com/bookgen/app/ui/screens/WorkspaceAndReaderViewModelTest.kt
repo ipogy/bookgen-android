@@ -13,10 +13,13 @@ import com.bookgen.app.domain.model.ReaderFontChoice
 import com.bookgen.app.domain.model.SectionPlanDraft
 import com.bookgen.app.domain.model.SectionStatus
 import com.bookgen.app.domain.model.ThemePreference
+import com.bookgen.app.ui.components.formatTooltipLabel
 import com.bookgen.app.ui.screens.reader.ReaderViewModel
 import com.bookgen.app.ui.screens.workspace.WorkspaceViewModel
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Runnable
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -32,6 +35,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.util.Base64
+import kotlin.coroutines.CoroutineContext
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class WorkspaceAndReaderViewModelTest {
@@ -161,6 +165,7 @@ class WorkspaceAndReaderViewModelTest {
             exportDir = exportDir,
             repository = repo,
             settingsRepository = settingsRepo,
+            computeDispatcher = testDispatcher,
         )
         vm1.setTheme(ThemePreference.SEPIA)
         vm1.setFontChoice(ReaderFontChoice.SANS)
@@ -174,6 +179,7 @@ class WorkspaceAndReaderViewModelTest {
             exportDir = exportDir,
             repository = repo,
             settingsRepository = settingsRepo,
+            computeDispatcher = testDispatcher,
         )
         assertEquals(ThemePreference.SEPIA, vm2.uiState.value.appearance.theme)
         assertEquals(ReaderFontChoice.SANS, vm2.uiState.value.appearance.fontChoice)
@@ -226,6 +232,7 @@ class WorkspaceAndReaderViewModelTest {
             exportDir = exportDir,
             repository = repo,
             settingsRepository = settingsRepo,
+            computeDispatcher = testDispatcher,
         )
 
         val parsed = vm.uiState.value.parsedSections.first()
@@ -235,6 +242,91 @@ class WorkspaceAndReaderViewModelTest {
             parsed.blocks.filterIsInstance<com.bookgen.app.domain.model.DocBlock.Paragraph>()
                 .none { it.text.contains("[stem]") || it.text.contains("++++") },
         )
+    }
+
+    @Test
+    fun readerOffloadsAstParsingOntoComputeDispatcherWhenSwitchingChapters() = runTest {
+        val dbPath = File(tempFolder.root, "reader_dispatch_test.db").absolutePath
+        val exportDir = tempFolder.newFolder("exports_dispatch")
+        val repo = RustBookRepository(dbPath = dbPath, ioDispatcher = testDispatcher)
+        val settingsRepo = SecureSettingsRepository(
+            prefs = FakePrefs(),
+            cipher = FakeCipher(),
+            ioDispatcher = testDispatcher,
+        )
+        val book = repo.createBook(
+            NewBookRequest(
+                title = "並列パース検証",
+                themePrompt = "Coroutine Dispatcher",
+                genreKey = "tech",
+                genreName = "IT技術",
+                targetAudience = "Android開発者",
+                tone = "論理的",
+                targetCharCount = 10_000L,
+                overview = "概要",
+            ),
+        )
+        val detail = repo.saveOutline(
+            book.id,
+            listOf(
+                ChapterPlanDraft(1, "第1章", "基本", listOf(SectionPlanDraft(1, "1節", "導入"))),
+                ChapterPlanDraft(2, "第2章", "発展", listOf(SectionPlanDraft(1, "2節", "数式"))),
+            ),
+        )
+        repo.upsertSectionContent(
+            detail.chapters[0].sections.first().id,
+            "== はじめに\n本文1です。",
+            MarkupFormat.ASCIIDOC,
+            "manual",
+            "test",
+        )
+        repo.upsertSectionContent(
+            detail.chapters[1].sections.first().id,
+            "== 応用解析\n\n[stem]\n++++\nx = \\sqrt{a^2 + b^2}\n++++",
+            MarkupFormat.ASCIIDOC,
+            "manual",
+            "test",
+        )
+
+        var computeDispatches = 0
+        val trackingComputeDispatcher = object : CoroutineDispatcher() {
+            override fun dispatch(context: CoroutineContext, block: Runnable) {
+                computeDispatches++
+                block.run()
+            }
+        }
+
+        val vm = ReaderViewModel(
+            bookId = book.id,
+            initialChapterIndex = 0,
+            exportDir = exportDir,
+            repository = repo,
+            settingsRepository = settingsRepo,
+            computeDispatcher = trackingComputeDispatcher,
+        )
+        val dispatchesAfterLoad = computeDispatches
+        assertTrue(dispatchesAfterLoad >= 1)
+        assertNotNull(vm.uiState.value.detail)
+        assertEquals(0, vm.uiState.value.currentChapterIndex)
+
+        vm.persistScrollFraction(0.5)
+        vm.selectChapter(1)
+
+        assertTrue(computeDispatches > dispatchesAfterLoad)
+        assertEquals(1, vm.uiState.value.currentChapterIndex)
+        assertEquals(0.0, vm.uiState.value.savedScrollFraction, 0.0001)
+        assertTrue(
+            vm.uiState.value.parsedSections.first().blocks.any {
+                it is com.bookgen.app.domain.model.DocBlock.MathBlock
+            },
+        )
+    }
+
+    @Test
+    fun editorialTooltipFormatsOptionalShortcutHint() {
+        assertEquals("目次 (Ctrl+T)", formatTooltipLabel("目次", "Ctrl+T"))
+        assertEquals("戻る", formatTooltipLabel("戻る"))
+        assertEquals("戻る", formatTooltipLabel("戻る", "  "))
     }
 
     private class FakeCipher : SecretCipher {
