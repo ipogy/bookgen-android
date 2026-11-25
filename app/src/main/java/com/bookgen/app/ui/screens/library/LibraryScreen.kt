@@ -657,6 +657,8 @@ private fun BookLibraryRow(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            val showStatusBadge =
+                book.status != BookStatus.COMPLETED || book.emptyOrFailedSections > 0
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -665,10 +667,12 @@ private fun BookLibraryRow(
                     .padding(end = 4.dp),
             ) {
                 GenreBadge(label = book.genreName.ifBlank { book.genreKey })
-                BookStatusBadge(
-                    status = book.status,
-                    emptyOrFailedCount = book.emptyOrFailedSections,
-                )
+                if (showStatusBadge) {
+                    BookStatusBadge(
+                        status = book.status,
+                        emptyOrFailedCount = book.emptyOrFailedSections,
+                    )
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 EditorialTooltipBox(label = "リーダーで開く") {

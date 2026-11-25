@@ -5,6 +5,12 @@ All notable changes to `bookgen-android` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-11-25
+
+### Changed
+- **Library Completed Badge Hierarchy (`LibraryScreen`)**: Kept the status badge on the top `HeroResumeCard` above `ライブラリ (x冊)` while omitting the repetitive `完了` badge from completed books in the catalog grid below so only books needing attention or still in progress display status badges.
+- **Theme-Harmonized Live Stream Drawer (`WorkspaceScreen`)**: Replaced the hardcoded dark `Slate900`/`Slate100` surface in `LiveStreamConsoleDrawer` with theme-aware `EditorialCard` and `MaterialTheme.colorScheme` / `BookGenThemeExtras.colors` tokens so it blends naturally with Light, Sepia, and Dark themes.
+
 ## [0.3.1] - 2026-11-25
 
 ### Fixed

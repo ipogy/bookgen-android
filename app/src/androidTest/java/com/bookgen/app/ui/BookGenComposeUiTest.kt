@@ -467,22 +467,33 @@ class BookGenComposeUiTest {
     }
 
     @Test
-    fun libraryStatusBadgeRemainsSingleLineWithLongGenreName() {
+    fun libraryHidesCompletedBadgeInListWhileKeepingHeroAndIncompleteBadgesSingleLine() {
         val completedBook = sampleSummary().copy(
+            id = "book-done",
+            title = "完了済み書籍",
             genreName = "IT技術・プログラミング・インフラ",
             status = BookStatus.COMPLETED,
             emptyOrFailedSections = 0,
             completedSections = 32,
             totalSections = 32,
         )
+        val incompleteBook = sampleSummary().copy(
+            id = "book-wip",
+            title = "執筆途中書籍",
+            genreName = "ビジネス・経営戦略・ファイナンス",
+            status = BookStatus.PARTIAL,
+            emptyOrFailedSections = 3,
+            completedSections = 5,
+            totalSections = 8,
+        )
         composeRule.setContent {
             BookGenTheme {
                 LibraryScreen(
                     state = LibraryUiState(
                         isLoading = false,
-                        books = listOf(completedBook),
-                        filteredBooks = listOf(completedBook),
-                        heroBook = null,
+                        books = listOf(completedBook, incompleteBook),
+                        filteredBooks = listOf(completedBook, incompleteBook),
+                        heroBook = completedBook,
                     ),
                     currentTheme = ThemePreference.LIGHT,
                     aiSettings = AiSettings(),
@@ -501,8 +512,13 @@ class BookGenComposeUiTest {
             }
         }
 
-        val badgeBounds = composeRule.onNodeWithText("完了").assertIsDisplayed().getBoundsInRoot()
-        assertTrue("Expected single-line badge height <= 28.dp, got ${badgeBounds.height}", badgeBounds.height <= 28.dp)
+        // Only the HeroResumeCard renders "完了"; the completed book row in the grid below omits it.
+        val heroBadgeBounds = composeRule.onNodeWithText("完了").assertIsDisplayed().getBoundsInRoot()
+        assertTrue("Expected single-line hero badge <= 28.dp, got ${heroBadgeBounds.height}", heroBadgeBounds.height <= 28.dp)
+
+        // Incomplete books in the library grid still display their attention badge on a single line.
+        val attentionBadgeBounds = composeRule.onNodeWithText("3節要再開").assertIsDisplayed().getBoundsInRoot()
+        assertTrue("Expected single-line incomplete badge <= 28.dp, got ${attentionBadgeBounds.height}", attentionBadgeBounds.height <= 28.dp)
     }
 
     private fun sampleSummary() = BookSummary(

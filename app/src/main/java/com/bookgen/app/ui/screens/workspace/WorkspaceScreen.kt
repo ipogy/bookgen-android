@@ -6,6 +6,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -28,6 +29,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -105,8 +107,6 @@ import com.bookgen.app.ui.components.WavyProgressTrack
 import com.bookgen.app.ui.theme.BookGenRadius
 import com.bookgen.app.ui.theme.BookGenThemeExtras
 import com.bookgen.app.ui.theme.CodeMonoFontFamily
-import com.bookgen.app.ui.theme.Slate100
-import com.bookgen.app.ui.theme.Slate900
 
 @Composable
 fun WorkspaceRoute(
@@ -404,6 +404,7 @@ fun WorkspaceScreen(
                 ) {
                     LiveStreamConsoleDrawer(
                         expanded = state.streamDrawerExpanded,
+                        isGenerating = state.isGenerating,
                         activeLabel = state.activeWritingLabel,
                         previewText = state.liveStreamPreview,
                         onToggle = onToggleStreamDrawer,
@@ -631,11 +632,15 @@ private fun PipelineStatusCard(
 @Composable
 private fun LiveStreamConsoleDrawer(
     expanded: Boolean,
+    isGenerating: Boolean,
     activeLabel: String,
     previewText: String,
     onToggle: () -> Unit,
 ) {
-    Surface(
+    val scheme = MaterialTheme.colorScheme
+    val statusDotColor = if (isGenerating) scheme.tertiary else scheme.primary
+
+    EditorialCard(
         modifier = Modifier
             .fillMaxWidth()
             .semantics(mergeDescendants = true) {
@@ -646,36 +651,52 @@ private fun LiveStreamConsoleDrawer(
                 onClickLabel = if (expanded) "ストリームコンソールを折りたたむ" else "ストリームコンソールを展開する",
                 onClick = onToggle,
             ),
-        shape = BookGenRadius.Card,
-        color = Slate900,
-        contentColor = Slate100,
+        containerColor = scheme.surfaceContainerLow,
+        borderColor = BookGenThemeExtras.colors.borderSubtle,
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
     ) {
-        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(color = statusDotColor, shape = CircleShape),
+                )
                 Text(
                     text = "LIVE STREAM • $activeLabel",
                     style = MaterialTheme.typography.labelMedium.copy(fontFamily = CodeMonoFontFamily),
-                    color = Slate100,
-                    modifier = Modifier.weight(1f),
+                    color = scheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Icon(
-                    imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                    contentDescription = null,
-                    tint = Slate100,
-                )
             }
-            AnimatedVisibility(visible = expanded) {
+            Icon(
+                imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                contentDescription = null,
+                tint = scheme.onSurfaceVariant,
+            )
+        }
+        AnimatedVisibility(visible = expanded) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp),
+                shape = BookGenRadius.Control,
+                color = scheme.surfaceContainerHigh,
+            ) {
                 Text(
                     text = previewText.ifBlank { "待機中です。BYOK APIキーを設定してバックグラウンド執筆を開始すると、生成中の本文ストリームがここに表示されます。" },
                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = CodeMonoFontFamily),
-                    color = Slate100.copy(alpha = 0.86f),
-                    modifier = Modifier.padding(top = 8.dp),
+                    color = scheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                     maxLines = 6,
                     overflow = TextOverflow.Ellipsis,
                 )
