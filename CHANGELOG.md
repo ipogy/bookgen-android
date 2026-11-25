@@ -5,6 +5,12 @@ All notable changes to `bookgen-android` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-11-25
+
+### Fixed
+- **Library Badge Wrapping (`EditorialBadges`, `LibraryScreen`)**: Prevented `BookStatusBadge` / `SectionStatusChip` labels (`完了`, etc.) from collapsing vertically when paired with long genre names by adding `maxLines = 1` / `softWrap = false` (`TextOverflow.Ellipsis` on `GenreBadge`) and switching `BookLibraryRow` / `HeroResumeCard` badge groups to `FlowRow`.
+- **Reader Status Bar & TopAppBar Bleed-Through (`ReaderScreen`)**: Wrapped the reader `topBar` (including `statusBarsPadding()`) inside an opaque `Surface(color = MaterialTheme.colorScheme.background)`, made `TopAppBar` container colors 100% opaque with zero double insets, and placed the chapter `LinearProgressIndicator` at the bottom seam of the header band so scrolled body text never shows behind system status icons or toolbar text.
+
 ## [0.3.0] - 2026-11-25
 
 ### Added

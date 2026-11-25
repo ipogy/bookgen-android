@@ -3,6 +3,7 @@ package com.bookgen.app.ui
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -12,6 +13,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.withKeyDown
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.height
 import com.bookgen.app.domain.model.AiSettings
 import com.bookgen.app.domain.model.BookDetail
 import com.bookgen.app.domain.model.BookStatus
@@ -461,6 +464,45 @@ class BookGenComposeUiTest {
         }
 
         composeRule.onNodeWithContentDescription("戻る").assertDoesNotExist()
+    }
+
+    @Test
+    fun libraryStatusBadgeRemainsSingleLineWithLongGenreName() {
+        val completedBook = sampleSummary().copy(
+            genreName = "IT技術・プログラミング・インフラ",
+            status = BookStatus.COMPLETED,
+            emptyOrFailedSections = 0,
+            completedSections = 32,
+            totalSections = 32,
+        )
+        composeRule.setContent {
+            BookGenTheme {
+                LibraryScreen(
+                    state = LibraryUiState(
+                        isLoading = false,
+                        books = listOf(completedBook),
+                        filteredBooks = listOf(completedBook),
+                        heroBook = null,
+                    ),
+                    currentTheme = ThemePreference.LIGHT,
+                    aiSettings = AiSettings(),
+                    onNewBookClick = {},
+                    onOpenWorkspace = {},
+                    onOpenReader = { _, _ -> },
+                    onFilterSelected = {},
+                    onSearchQueryChanged = {},
+                    onDeleteBook = {},
+                    onImportDirectory = {},
+                    onThemeSelected = {},
+                    onSaveAiSettings = {},
+                    onClearAiKeys = {},
+                    onDismissMessages = {},
+                )
+            }
+        }
+
+        val badgeBounds = composeRule.onNodeWithText("完了").assertIsDisplayed().getBoundsInRoot()
+        assertTrue("Expected single-line badge height <= 28.dp, got ${badgeBounds.height}", badgeBounds.height <= 28.dp)
     }
 
     private fun sampleSummary() = BookSummary(

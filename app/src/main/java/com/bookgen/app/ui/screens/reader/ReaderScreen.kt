@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -377,63 +378,70 @@ fun ReaderScreen(
             },
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
-                LinearProgressIndicator(
-                    progress = { chapterProgress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(3.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                )
-                AnimatedVisibility(
-                    visible = effectiveChromeVisible,
-                    enter = if (prefersReducedMotion) EnterTransition.None else slideInVertically { -it },
-                    exit = if (prefersReducedMotion) ExitTransition.None else slideOutVertically { -it },
-                ) {
-                    TopAppBar(
-                        title = {
-                            Text(
-                                text = currentChapter?.let {
-                                    "第${it.chapter.chapterNumber}章: ${it.chapter.title}"
-                                } ?: (detail?.summary?.title ?: "リーダー"),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                        },
-                        navigationIcon = {
-                            if (showBackButton) {
-                                EditorialTooltipBox(label = "戻る", shortcutHint = "Esc") {
-                                    IconButton(onClick = onBack) {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                                            contentDescription = "戻る",
-                                        )
+            Surface(
+                color = MaterialTheme.colorScheme.background,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
+                    AnimatedVisibility(
+                        visible = effectiveChromeVisible,
+                        enter = if (prefersReducedMotion) EnterTransition.None else slideInVertically { -it },
+                        exit = if (prefersReducedMotion) ExitTransition.None else slideOutVertically { -it },
+                    ) {
+                        TopAppBar(
+                            title = {
+                                Text(
+                                    text = currentChapter?.let {
+                                        "第${it.chapter.chapterNumber}章: ${it.chapter.title}"
+                                    } ?: (detail?.summary?.title ?: "リーダー"),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.titleMedium,
+                                )
+                            },
+                            windowInsets = WindowInsets(0, 0, 0, 0),
+                            navigationIcon = {
+                                if (showBackButton) {
+                                    EditorialTooltipBox(label = "戻る", shortcutHint = "Esc") {
+                                        IconButton(onClick = onBack) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                                                contentDescription = "戻る",
+                                            )
+                                        }
                                     }
                                 }
-                            }
-                        },
-                        actions = {
-                            EditorialTooltipBox(label = "目次", shortcutHint = "Ctrl+T") {
-                                IconButton(onClick = { showTocSheet = true }) {
-                                    Icon(Icons.AutoMirrored.Outlined.List, contentDescription = "目次")
+                            },
+                            actions = {
+                                EditorialTooltipBox(label = "目次", shortcutHint = "Ctrl+T") {
+                                    IconButton(onClick = { showTocSheet = true }) {
+                                        Icon(Icons.AutoMirrored.Outlined.List, contentDescription = "目次")
+                                    }
                                 }
-                            }
-                            EditorialTooltipBox(label = "表示設定", shortcutHint = "Ctrl+,") {
-                                IconButton(onClick = { showAppearanceSheet = true }) {
-                                    Icon(Icons.Outlined.TextFormat, contentDescription = "表示設定")
+                                EditorialTooltipBox(label = "表示設定", shortcutHint = "Ctrl+,") {
+                                    IconButton(onClick = { showAppearanceSheet = true }) {
+                                        Icon(Icons.Outlined.TextFormat, contentDescription = "表示設定")
+                                    }
                                 }
-                            }
-                            EditorialTooltipBox(label = "書き出し", shortcutHint = "Ctrl+E") {
-                                IconButton(onClick = { showExportSheet = true }) {
-                                    Icon(Icons.Outlined.IosShare, contentDescription = "書き出し")
+                                EditorialTooltipBox(label = "書き出し", shortcutHint = "Ctrl+E") {
+                                    IconButton(onClick = { showExportSheet = true }) {
+                                        Icon(Icons.Outlined.IosShare, contentDescription = "書き出し")
+                                    }
                                 }
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.96f),
-                        ),
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.background,
+                                scrolledContainerColor = MaterialTheme.colorScheme.background,
+                            ),
+                        )
+                    }
+                    LinearProgressIndicator(
+                        progress = { chapterProgress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     )
                 }
             }

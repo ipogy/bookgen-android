@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bookgen.app.domain.model.BookStatus
 import com.bookgen.app.domain.model.SectionStatus
@@ -83,6 +84,8 @@ fun GenreBadge(
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
         )
     }
@@ -159,6 +162,8 @@ fun BookStatusBadge(
             Text(
                 text = spec.label,
                 style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                softWrap = false,
             )
         }
     }
@@ -223,6 +228,8 @@ fun SectionStatusChip(
             Text(
                 text = spec.label,
                 style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                softWrap = false,
             )
         }
     }
