@@ -2,6 +2,7 @@ package com.bookgen.app.ui.components
 
 import android.content.ClipData
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -383,14 +384,21 @@ private fun AstTableCard(
                 .padding(8.dp),
         ) {
             if (headers.isNotEmpty()) {
-                Row(modifier = Modifier.padding(bottom = 6.dp)) {
+                Row(
+                    modifier = Modifier
+                        .background(
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = BookGenRadius.Badge,
+                        )
+                        .padding(vertical = 4.dp),
+                ) {
                     headers.forEach { header ->
                         val styledHeader = remember(header, format, richColors) {
                             formatInlineRichText(header, format, 13.sp, richColors)
                         }
                         Text(
                             text = styledHeader,
-                            style = MaterialTheme.typography.labelLarge,
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier
                                 .width(colWidth)

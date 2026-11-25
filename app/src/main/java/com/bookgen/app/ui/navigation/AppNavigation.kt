@@ -2,14 +2,13 @@ package com.bookgen.app.ui.navigation
 
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.ContentTransform
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.IntOffset
 import androidx.lifecycle.compose.dropUnlessResumed
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
@@ -28,6 +27,8 @@ import com.bookgen.app.ui.screens.wizard.WizardRoute
 import com.bookgen.app.ui.screens.wizard.WizardViewModel
 import com.bookgen.app.ui.screens.workspace.WorkspaceRoute
 import com.bookgen.app.ui.screens.workspace.WorkspaceViewModel
+import com.bookgen.app.ui.theme.BookGenMotion
+import com.bookgen.app.ui.theme.rememberPrefersReducedMotion
 import kotlinx.serialization.Serializable
 
 /**
@@ -51,22 +52,13 @@ sealed interface AppRoute : NavKey {
     ) : AppRoute
 }
 
-private val SlideSpring = spring<IntOffset>(
-    dampingRatio = Spring.DampingRatioNoBouncy,
-    stiffness = Spring.StiffnessMediumLow,
-)
-
-private val FadeSpring = spring<Float>(
-    dampingRatio = Spring.DampingRatioNoBouncy,
-    stiffness = Spring.StiffnessMedium,
-)
-
 @Composable
 fun BookGenApp(
     container: AppContainer,
     initialBookId: String? = null,
     modifier: Modifier = Modifier,
 ) {
+    val prefersReducedMotion = rememberPrefersReducedMotion()
     val startDestination: AppRoute = if (!initialBookId.isNullOrBlank()) {
         AppRoute.WorkspaceRouteKey(initialBookId)
     } else {
@@ -89,9 +81,15 @@ fun BookGenApp(
             rememberSaveableStateHolderNavEntryDecorator(),
             rememberViewModelStoreNavEntryDecorator(),
         ),
-        transitionSpec = { forwardTransition() },
-        popTransitionSpec = { backwardTransition() },
-        predictivePopTransitionSpec = { backwardTransition() },
+        transitionSpec = {
+            if (prefersReducedMotion) EnterTransition.None togetherWith ExitTransition.None else forwardTransition()
+        },
+        popTransitionSpec = {
+            if (prefersReducedMotion) EnterTransition.None togetherWith ExitTransition.None else backwardTransition()
+        },
+        predictivePopTransitionSpec = {
+            if (prefersReducedMotion) EnterTransition.None togetherWith ExitTransition.None else backwardTransition()
+        },
         modifier = modifier,
         entryProvider = entryProvider {
             entry<AppRoute.LibraryRouteKey> {
@@ -230,31 +228,33 @@ private fun NavBackStack<NavKey>.replaceTopWith(target: AppRoute) {
 }
 
 private fun <S> AnimatedContentTransitionScope<S>.forwardTransition(): ContentTransform {
+    val slideSpec = BookGenMotion.slideSpring()
     val slideIn = slideIntoContainer(
         towards = AnimatedContentTransitionScope.SlideDirection.Start,
-        animationSpec = SlideSpring,
+        animationSpec = slideSpec,
         initialOffset = { fullWidth -> (fullWidth * 0.16f).toInt() },
     )
     val slideOut = slideOutOfContainer(
         towards = AnimatedContentTransitionScope.SlideDirection.Start,
-        animationSpec = SlideSpring,
+        animationSpec = slideSpec,
         targetOffset = { fullWidth -> -(fullWidth * 0.08f).toInt() },
     )
-    return (slideIn + fadeIn(animationSpec = FadeSpring))
-        .togetherWith(slideOut + fadeOut(animationSpec = FadeSpring))
+    return (slideIn + fadeIn(animationSpec = BookGenMotion.fadeEnterSpec()))
+        .togetherWith(slideOut + fadeOut(animationSpec = BookGenMotion.fadeExitSpec()))
 }
 
 private fun <S> AnimatedContentTransitionScope<S>.backwardTransition(): ContentTransform {
+    val slideSpec = BookGenMotion.slideSpring()
     val slideIn = slideIntoContainer(
         towards = AnimatedContentTransitionScope.SlideDirection.End,
-        animationSpec = SlideSpring,
+        animationSpec = slideSpec,
         initialOffset = { fullWidth -> -(fullWidth * 0.08f).toInt() },
     )
     val slideOut = slideOutOfContainer(
         towards = AnimatedContentTransitionScope.SlideDirection.End,
-        animationSpec = SlideSpring,
+        animationSpec = slideSpec,
         targetOffset = { fullWidth -> (fullWidth * 0.16f).toInt() },
     )
-    return (slideIn + fadeIn(animationSpec = FadeSpring))
-        .togetherWith(slideOut + fadeOut(animationSpec = FadeSpring))
+    return (slideIn + fadeIn(animationSpec = BookGenMotion.fadeEnterSpec()))
+        .togetherWith(slideOut + fadeOut(animationSpec = BookGenMotion.fadeExitSpec()))
 }

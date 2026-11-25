@@ -172,7 +172,7 @@ val LightExtendedColors = BookGenExtendedColors(
 )
 
 val DarkExtendedColors = BookGenExtendedColors(
-    borderSubtle = Slate700,
+    borderSubtle = Color(0xFF424754),
     warning = Warning200,
     success = Success200,
     codeSurface = Color(0xFF0D0F13),
@@ -183,8 +183,8 @@ val DarkExtendedColors = BookGenExtendedColors(
 
 val SepiaExtendedColors = BookGenExtendedColors(
     borderSubtle = Sepia300,
-    warning = Warning700,
-    success = Success700,
+    warning = Color(0xFF7D4500),
+    success = Color(0xFF175931),
     codeSurface = Color(0xFF2D241C),
     onCodeSurface = Sepia50,
     admonitionSurface = Sepia100,

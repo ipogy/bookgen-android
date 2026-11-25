@@ -9,15 +9,20 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -39,6 +44,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -65,6 +74,7 @@ fun AiSettingsBottomSheet(
     var providers by remember(currentSettings) { mutableStateOf(currentSettings.openRouterProviders) }
     var concurrency by remember(currentSettings) { mutableIntStateOf(currentSettings.maxConcurrency) }
     var revealKeys by rememberSaveable { mutableStateOf(false) }
+    var confirmClearKeys by rememberSaveable { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -76,13 +86,29 @@ fun AiSettingsBottomSheet(
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
+                .imePadding()
                 .navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                text = "スタジオ設定 & BYOK APIキー",
-                style = MaterialTheme.typography.titleMedium,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "スタジオ設定 & BYOK APIキー",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier
+                        .weight(1f)
+                        .semantics { heading() },
+                )
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.Outlined.Close,
+                        contentDescription = "設定を閉じる",
+                    )
+                }
+            }
             Text(
                 text = "APIキーは端末内の Android Keystore (AES-256-GCM) にのみ暗号化保存され、SQLite やログには記録されません。",
                 style = MaterialTheme.typography.bodySmall,
@@ -107,15 +133,18 @@ fun AiSettingsBottomSheet(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { onThemeSelected(pref) }
-                                .padding(vertical = 2.dp),
+                                .clickable(
+                                    role = Role.RadioButton,
+                                    onClick = { onThemeSelected(pref) },
+                                )
+                                .padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             RadioButton(
                                 selected = currentTheme == pref,
-                                onClick = { onThemeSelected(pref) },
+                                onClick = null,
                             )
-                            Spacer(Modifier.width(6.dp))
+                            Spacer(Modifier.width(8.dp))
                             Text(text = label, style = MaterialTheme.typography.bodyMedium)
                         }
                     }
@@ -138,11 +167,18 @@ fun AiSettingsBottomSheet(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 visualTransformation = visual,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    autoCorrectEnabled = false,
+                ),
                 label = { Text("Gemini API Key (AIza...)") },
                 supportingText = { Text("現在: ${currentSettings.maskedGeminiKey()}") },
                 trailingIcon = {
                     IconButton(onClick = { revealKeys = !revealKeys }) {
-                        Icon(eyeIcon, contentDescription = "キー表示切替")
+                        Icon(
+                            imageVector = eyeIcon,
+                            contentDescription = if (revealKeys) "APIキーを隠す" else "APIキーを表示する",
+                        )
                     }
                 },
             )
@@ -153,6 +189,10 @@ fun AiSettingsBottomSheet(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 visualTransformation = visual,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    autoCorrectEnabled = false,
+                ),
                 label = { Text("OpenRouter API Key (sk-or-...)") },
                 supportingText = { Text("スラッシュ入りモデル (例: inclusionai/...) で使用") },
             )
@@ -216,14 +256,10 @@ fun AiSettingsBottomSheet(
             ) {
                 if (currentSettings.hasAnyApiKey()) {
                     OutlinedButton(
-                        onClick = {
-                            onClearKeys()
-                            geminiKey = ""
-                            openRouterKey = ""
-                        },
+                        onClick = { confirmClearKeys = true },
                         shape = BookGenRadius.Control,
                     ) {
-                        Text("キー消去")
+                        Text("キー消去", color = MaterialTheme.colorScheme.error)
                     }
                 } else {
                     TextButton(onClick = onDismiss) {
@@ -234,12 +270,12 @@ fun AiSettingsBottomSheet(
                     onClick = {
                         onSaveSettings(
                             AiSettings(
-                                geminiApiKey = geminiKey,
-                                openRouterApiKey = openRouterKey,
+                                geminiApiKey = geminiKey.trim(),
+                                openRouterApiKey = openRouterKey.trim(),
                                 embeddingModel = plannerModelOrDefault(embeddingModel, AiSettings.DEFAULT_EMBEDDING_MODEL),
                                 plannerModel = plannerModelOrDefault(plannerModel, AiSettings.DEFAULT_PLANNER_MODEL),
                                 writerModel = plannerModelOrDefault(writerModel, AiSettings.DEFAULT_WRITER_MODEL),
-                                openRouterProviders = providers,
+                                openRouterProviders = providers.trim(),
                                 maxConcurrency = concurrency,
                             ),
                         )
@@ -252,6 +288,35 @@ fun AiSettingsBottomSheet(
             }
             Spacer(Modifier.height(16.dp))
         }
+    }
+
+    if (confirmClearKeys) {
+        AlertDialog(
+            onDismissRequest = { confirmClearKeys = false },
+            title = { Text("APIキーを消去しますか？") },
+            text = { Text("端末の Keystore に保存されている Gemini / OpenRouter APIキーを削除します。") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        confirmClearKeys = false
+                        onClearKeys()
+                        geminiKey = ""
+                        openRouterKey = ""
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                ) {
+                    Text("消去する")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearKeys = false }) {
+                    Text("キャンセル")
+                }
+            },
+        )
     }
 }
 

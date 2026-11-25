@@ -10,6 +10,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,8 +22,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
@@ -34,13 +39,17 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -66,6 +75,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -186,6 +198,7 @@ fun WorkspaceScreen(
     var showAddChapterDialog by rememberSaveable { mutableStateOf(false) }
     var chapterForNewSection by remember { mutableStateOf<String?>(null) }
     var editingChapter by remember { mutableStateOf<ChapterWithSections?>(null) }
+    var deleteCandidateSection by remember { mutableStateOf<SectionRecord?>(null) }
 
     LaunchedEffect(state.snackbarMessage) {
         val msg = state.snackbarMessage
@@ -245,76 +258,91 @@ fun WorkspaceScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { innerPadding ->
         if (state.isLoading && state.detail == null) {
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding),
-                contentAlignment = Alignment.Center,
+                    .padding(innerPadding)
+                    .semantics(mergeDescendants = true) {},
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
             ) {
                 CircularProgressIndicator()
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "スタジオを読み込み中…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             return@Scaffold
         }
 
-        LazyColumn(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .consumeWindowInsets(innerPadding),
-            contentPadding = PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
-                top = innerPadding.calculateTopPadding() + 6.dp,
-                bottom = innerPadding.calculateBottomPadding() + 28.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            contentAlignment = Alignment.TopCenter,
         ) {
-            item(key = "pipeline_status", contentType = "pipeline_status") {
-                if (summary != null) {
-                    PipelineStatusCard(
-                        completed = summary.completedSections,
-                        total = summary.totalSections,
-                        incompleteCount = state.incompleteSections.size,
-                        progressFraction = summary.progressFraction,
-                        isGenerating = state.isGenerating,
-                        onStartOrResume = onStartOrResumePipeline,
-                        onPausePipeline = onPausePipeline,
-                        onOpenReader = onOpenReader,
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 720.dp),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = innerPadding.calculateTopPadding() + 6.dp,
+                    bottom = innerPadding.calculateBottomPadding() + 28.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                item(key = "pipeline_status", contentType = "pipeline_status") {
+                    if (summary != null) {
+                        PipelineStatusCard(
+                            completed = summary.completedSections,
+                            total = summary.totalSections,
+                            incompleteCount = state.incompleteSections.size,
+                            progressFraction = summary.progressFraction,
+                            isGenerating = state.isGenerating,
+                            onStartOrResume = onStartOrResumePipeline,
+                            onPausePipeline = onPausePipeline,
+                            onOpenReader = onOpenReader,
+                        )
+                    }
+                }
+
+                item(key = "live_stream_drawer", contentType = "live_stream_drawer") {
+                    LiveStreamConsoleDrawer(
+                        expanded = state.streamDrawerExpanded,
+                        activeLabel = state.activeWritingLabel,
+                        previewText = state.liveStreamPreview,
+                        onToggle = onToggleStreamDrawer,
                     )
                 }
-            }
 
-            item(key = "live_stream_drawer", contentType = "live_stream_drawer") {
-                LiveStreamConsoleDrawer(
-                    expanded = state.streamDrawerExpanded,
-                    activeLabel = state.activeWritingLabel,
-                    previewText = state.liveStreamPreview,
-                    onToggle = onToggleStreamDrawer,
-                )
-            }
-
-            itemsIndexed(
-                items = chapters,
-                key = { _, item -> item.chapter.id },
-                contentType = { _, _ -> "chapter_card" },
-            ) { index, chWithSecs ->
-                val isExpanded = chWithSecs.chapter.id in state.expandedChapterIds
-                ChapterOutlineCard(
-                    chapterWithSections = chWithSecs,
-                    isExpanded = isExpanded,
-                    canMoveUp = index > 0,
-                    canMoveDown = index < chapters.lastIndex,
-                    onToggleExpand = { onToggleChapter(chWithSecs.chapter.id) },
-                    onMoveUp = { onMoveChapterUp(index) },
-                    onMoveDown = { onMoveChapterDown(index) },
-                    onEditChapter = { editingChapter = chWithSecs },
-                    onAddSection = { chapterForNewSection = chWithSecs.chapter.id },
-                    onMoveSectionUp = { secIdx -> onMoveSectionUp(chWithSecs.chapter.id, secIdx) },
-                    onMoveSectionDown = { secIdx -> onMoveSectionDown(chWithSecs.chapter.id, secIdx) },
-                    onEditSection = onEditSectionClick,
-                    onRegenerateChapter = { onRegenerateChapter(chWithSecs) },
-                    onRegenerateSection = onRegenerateSection,
-                    onDeleteSection = onDeleteSection,
-                )
+                itemsIndexed(
+                    items = chapters,
+                    key = { _, item -> item.chapter.id },
+                    contentType = { _, _ -> "chapter_card" },
+                ) { index, chWithSecs ->
+                    val isExpanded = chWithSecs.chapter.id in state.expandedChapterIds
+                    ChapterOutlineCard(
+                        chapterWithSections = chWithSecs,
+                        isExpanded = isExpanded,
+                        canMoveUp = index > 0,
+                        canMoveDown = index < chapters.lastIndex,
+                        onToggleExpand = { onToggleChapter(chWithSecs.chapter.id) },
+                        onMoveUp = { onMoveChapterUp(index) },
+                        onMoveDown = { onMoveChapterDown(index) },
+                        onEditChapter = { editingChapter = chWithSecs },
+                        onAddSection = { chapterForNewSection = chWithSecs.chapter.id },
+                        onMoveSectionUp = { secIdx -> onMoveSectionUp(chWithSecs.chapter.id, secIdx) },
+                        onMoveSectionDown = { secIdx -> onMoveSectionDown(chWithSecs.chapter.id, secIdx) },
+                        onEditSection = onEditSectionClick,
+                        onRegenerateChapter = { onRegenerateChapter(chWithSecs) },
+                        onRegenerateSection = onRegenerateSection,
+                        onRequestDeleteSection = { sec -> deleteCandidateSection = sec },
+                    )
+                }
             }
         }
     }
@@ -395,8 +423,38 @@ fun WorkspaceScreen(
             },
         )
     }
+
+    deleteCandidateSection?.let { victim ->
+        AlertDialog(
+            onDismissRequest = { deleteCandidateSection = null },
+            title = { Text("節を削除しますか？") },
+            text = {
+                Text("「${victim.chapterNumber}.${victim.sectionNumber} ${victim.title}」と執筆済み本文が削除されます。")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeleteSection(victim.id)
+                        deleteCandidateSection = null
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                ) {
+                    Text("削除")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteCandidateSection = null }) {
+                    Text("キャンセル")
+                }
+            },
+        )
+    }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PipelineStatusCard(
     completed: Int,
@@ -440,7 +498,10 @@ private fun PipelineStatusCard(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             if (isGenerating) {
                 OutlinedButton(
                     onClick = onPausePipeline,
@@ -485,12 +546,19 @@ private fun LiveStreamConsoleDrawer(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onToggle),
+            .semantics(mergeDescendants = true) {
+                stateDescription = if (expanded) "展開中" else "折りたたみ"
+            }
+            .clickable(
+                role = Role.Button,
+                onClickLabel = if (expanded) "ストリームコンソールを折りたたむ" else "ストリームコンソールを展開する",
+                onClick = onToggle,
+            ),
         shape = BookGenRadius.Card,
         color = Slate900,
         contentColor = Slate100,
     ) {
-        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -500,10 +568,13 @@ private fun LiveStreamConsoleDrawer(
                     text = "LIVE STREAM • $activeLabel",
                     style = MaterialTheme.typography.labelMedium.copy(fontFamily = CodeMonoFontFamily),
                     color = Slate100,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Icon(
                     imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                    contentDescription = if (expanded) "折りたたむ" else "展開する",
+                    contentDescription = null,
                     tint = Slate100,
                 )
             }
@@ -537,50 +608,107 @@ private fun ChapterOutlineCard(
     onEditSection: (SectionRecord) -> Unit,
     onRegenerateChapter: () -> Unit,
     onRegenerateSection: (SectionRecord) -> Unit,
-    onDeleteSection: (String) -> Unit,
+    onRequestDeleteSection: (SectionRecord) -> Unit,
 ) {
     val ch = chapterWithSections.chapter
+    var showChapterMenu by remember { mutableStateOf(false) }
+
     EditorialCard(
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(12.dp),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onToggleExpand),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "第${ch.chapterNumber}章: ${ch.title}",
-                    style = MaterialTheme.typography.titleSmall,
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .semantics(mergeDescendants = true) {
+                        stateDescription = if (isExpanded) "展開中" else "折りたたみ"
+                    }
+                    .clickable(
+                        role = Role.Button,
+                        onClickLabel = if (isExpanded) "第${ch.chapterNumber}章を折りたたむ" else "第${ch.chapterNumber}章を展開する",
+                        onClick = onToggleExpand,
+                    )
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = if (isExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(end = 8.dp),
                 )
-                if (ch.focusArea.isNotBlank()) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = ch.focusArea,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        text = "第${ch.chapterNumber}章: ${ch.title}",
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    if (ch.focusArea.isNotBlank()) {
+                        Text(
+                            text = ch.focusArea,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
             IconButton(onClick = onRegenerateChapter) {
                 Icon(Icons.Outlined.AutoFixHigh, contentDescription = "この章を再生成・トーン調整")
             }
-            IconButton(enabled = canMoveUp, onClick = onMoveUp) {
-                Icon(Icons.Outlined.ArrowUpward, contentDescription = "章を上へ")
+            Box {
+                IconButton(onClick = { showChapterMenu = true }) {
+                    Icon(
+                        imageVector = Icons.Outlined.MoreVert,
+                        contentDescription = "第${ch.chapterNumber}章の操作メニュー",
+                    )
+                }
+                DropdownMenu(
+                    expanded = showChapterMenu,
+                    onDismissRequest = { showChapterMenu = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("章タイトル・方針を編集") },
+                        leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
+                        onClick = {
+                            showChapterMenu = false
+                            onEditChapter()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("新しい節を追加") },
+                        leadingIcon = { Icon(Icons.Outlined.Add, contentDescription = null) },
+                        onClick = {
+                            showChapterMenu = false
+                            onAddSection()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("上へ移動") },
+                        leadingIcon = { Icon(Icons.Outlined.ArrowUpward, contentDescription = null) },
+                        enabled = canMoveUp,
+                        onClick = {
+                            showChapterMenu = false
+                            onMoveUp()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("下へ移動") },
+                        leadingIcon = { Icon(Icons.Outlined.ArrowDownward, contentDescription = null) },
+                        enabled = canMoveDown,
+                        onClick = {
+                            showChapterMenu = false
+                            onMoveDown()
+                        },
+                    )
+                }
             }
-            IconButton(enabled = canMoveDown, onClick = onMoveDown) {
-                Icon(Icons.Outlined.ArrowDownward, contentDescription = "章を下へ")
-            }
-            IconButton(onClick = onEditChapter) {
-                Icon(Icons.Outlined.Edit, contentDescription = "章を編集")
-            }
-            Icon(
-                imageVector = if (isExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                contentDescription = null,
-            )
         }
 
         AnimatedVisibility(visible = isExpanded) {
@@ -599,7 +727,7 @@ private fun ChapterOutlineCard(
                         onMoveDown = { onMoveSectionDown(idx) },
                         onEdit = { onEditSection(section) },
                         onRegenerate = { onRegenerateSection(section) },
-                        onDelete = { onDeleteSection(section.id) },
+                        onDeleteRequest = { onRequestDeleteSection(section) },
                     )
                     HorizontalDivider(color = BookGenThemeExtras.colors.borderSubtle.copy(alpha = 0.6f))
                 }
@@ -629,16 +757,22 @@ private fun SectionOutlineRow(
     onMoveDown: () -> Unit,
     onEdit: () -> Unit,
     onRegenerate: () -> Unit,
-    onDelete: () -> Unit,
+    onDeleteRequest: () -> Unit,
 ) {
+    var showSectionMenu by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onEdit)
+            .clickable(
+                role = Role.Button,
+                onClickLabel = "「${section.title}」を編集",
+                onClick = onEdit,
+            )
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
             Text(
                 text = "${section.chapterNumber}.${section.sectionNumber} ${section.title}",
                 style = MaterialTheme.typography.bodyMedium,
@@ -651,17 +785,72 @@ private fun SectionOutlineRow(
                 charCount = section.charCount,
             )
         }
-        IconButton(enabled = canMoveUp, onClick = onMoveUp) {
-            Icon(Icons.Outlined.ArrowUpward, contentDescription = "節を上へ", modifier = Modifier.size(18.dp))
-        }
-        IconButton(enabled = canMoveDown, onClick = onMoveDown) {
-            Icon(Icons.Outlined.ArrowDownward, contentDescription = "節を下へ", modifier = Modifier.size(18.dp))
-        }
-        IconButton(onClick = onRegenerate) {
-            Icon(Icons.Outlined.AutoFixHigh, contentDescription = "節を再生成待ち", modifier = Modifier.size(18.dp))
-        }
-        IconButton(onClick = onDelete) {
-            Icon(Icons.Outlined.DeleteOutline, contentDescription = "節を削除", modifier = Modifier.size(18.dp))
+        Box {
+            IconButton(onClick = { showSectionMenu = true }) {
+                Icon(
+                    imageVector = Icons.Outlined.MoreVert,
+                    contentDescription = "「${section.title}」の操作メニュー",
+                )
+            }
+            DropdownMenu(
+                expanded = showSectionMenu,
+                onDismissRequest = { showSectionMenu = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text("本文・タイトルを編集") },
+                    leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
+                    onClick = {
+                        showSectionMenu = false
+                        onEdit()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("AI で再生成・調整") },
+                    leadingIcon = { Icon(Icons.Outlined.AutoFixHigh, contentDescription = null) },
+                    onClick = {
+                        showSectionMenu = false
+                        onRegenerate()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("上へ移動") },
+                    leadingIcon = { Icon(Icons.Outlined.ArrowUpward, contentDescription = null) },
+                    enabled = canMoveUp,
+                    onClick = {
+                        showSectionMenu = false
+                        onMoveUp()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("下へ移動") },
+                    leadingIcon = { Icon(Icons.Outlined.ArrowDownward, contentDescription = null) },
+                    enabled = canMoveDown,
+                    onClick = {
+                        showSectionMenu = false
+                        onMoveDown()
+                    },
+                )
+                HorizontalDivider(color = BookGenThemeExtras.colors.borderSubtle)
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = "この節を削除",
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.DeleteOutline,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                    },
+                    onClick = {
+                        showSectionMenu = false
+                        onDeleteRequest()
+                    },
+                )
+            }
         }
     }
 }
@@ -722,16 +911,29 @@ private fun SectionEditorDialog(
     var title by rememberSaveable(section.id) { mutableStateOf(section.title) }
     var content by rememberSaveable(section.id, section.revisionCount) { mutableStateOf(section.content) }
     var showRevisions by rememberSaveable { mutableStateOf(false) }
+    var confirmDiscard by remember { mutableStateOf(false) }
+    val hasUnsavedChanges = title != section.title || content != section.content
+
+    val handleRequestClose = {
+        if (hasUnsavedChanges) {
+            confirmDiscard = true
+        } else {
+            onDismiss()
+        }
+    }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = handleRequestClose,
         title = {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("${section.chapterNumber}.${section.sectionNumber} 編集")
+                Text(
+                    text = "${section.chapterNumber}.${section.sectionNumber} 編集",
+                    modifier = Modifier.weight(1f),
+                )
                 if (revisions.isNotEmpty()) {
                     TextButton(onClick = { showRevisions = !showRevisions }) {
                         Icon(Icons.Outlined.History, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -742,7 +944,10 @@ private fun SectionEditorDialog(
             }
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 if (showRevisions && revisions.isNotEmpty()) {
                     revisions.take(4).forEach { rev ->
                         Row(
@@ -766,7 +971,11 @@ private fun SectionEditorDialog(
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text("節タイトル") },
+                    label = { Text("節タイトル *") },
+                    isError = title.isBlank(),
+                    supportingText = if (title.isBlank()) {
+                        { Text("節タイトルは空にできません") }
+                    } else null,
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -789,7 +998,34 @@ private fun SectionEditorDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("閉じる") }
+            TextButton(onClick = handleRequestClose) { Text("閉じる") }
         },
     )
+
+    if (confirmDiscard) {
+        AlertDialog(
+            onDismissRequest = { confirmDiscard = false },
+            title = { Text("未保存の変更を破棄しますか？") },
+            text = { Text("保存せずに閉じると編集中のタイトル・本文の変更は失われます。") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        confirmDiscard = false
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                ) {
+                    Text("破棄する")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDiscard = false }) {
+                    Text("編集を続ける")
+                }
+            },
+        )
+    }
 }

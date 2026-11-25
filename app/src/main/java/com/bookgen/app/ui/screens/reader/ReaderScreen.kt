@@ -7,6 +7,8 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
@@ -22,6 +24,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -30,9 +33,13 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.List
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.TextFormat
 import androidx.compose.material3.Button
@@ -71,7 +78,14 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bookgen.app.data.storage.ExportShareHelper
 import com.bookgen.app.domain.model.ChapterWithSections
@@ -82,9 +96,12 @@ import com.bookgen.app.domain.model.ThemePreference
 import com.bookgen.app.ui.components.EditorialCard
 import com.bookgen.app.ui.components.NativeAstBlockView
 import com.bookgen.app.ui.components.WavyProgressTrack
+import com.bookgen.app.ui.components.formatInlineRichText
+import com.bookgen.app.ui.components.rememberRichTextColors
 import com.bookgen.app.ui.theme.BookGenRadius
 import com.bookgen.app.ui.theme.BookGenTheme
 import com.bookgen.app.ui.theme.BookGenThemeExtras
+import com.bookgen.app.ui.theme.rememberPrefersReducedMotion
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -206,6 +223,7 @@ fun ReaderScreen(
     var showTocSheet by rememberSaveable { mutableStateOf(false) }
     var showAppearanceSheet by rememberSaveable { mutableStateOf(false) }
     var showExportSheet by rememberSaveable { mutableStateOf(false) }
+    val prefersReducedMotion = rememberPrefersReducedMotion()
 
     val detail = state.detail
     val chapters = detail?.chapters.orEmpty()
@@ -260,8 +278,8 @@ fun ReaderScreen(
                 )
                 AnimatedVisibility(
                     visible = state.chromeVisible,
-                    enter = slideInVertically { -it },
-                    exit = slideOutVertically { -it },
+                    enter = if (prefersReducedMotion) EnterTransition.None else slideInVertically { -it },
+                    exit = if (prefersReducedMotion) ExitTransition.None else slideOutVertically { -it },
                 ) {
                     TopAppBar(
                         title = {
@@ -270,6 +288,7 @@ fun ReaderScreen(
                                     "第${it.chapter.chapterNumber}章: ${it.chapter.title}"
                                 } ?: (detail?.summary?.title ?: "リーダー"),
                                 maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.titleMedium,
                             )
                         },
@@ -302,8 +321,8 @@ fun ReaderScreen(
         bottomBar = {
             AnimatedVisibility(
                 visible = state.chromeVisible && chapters.isNotEmpty(),
-                enter = slideInVertically { it },
-                exit = slideOutVertically { it },
+                enter = if (prefersReducedMotion) EnterTransition.None else slideInVertically { it },
+                exit = if (prefersReducedMotion) ExitTransition.None else slideOutVertically { it },
             ) {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -343,19 +362,28 @@ fun ReaderScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { innerPadding ->
         if (state.isLoading && detail == null) {
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding),
-                contentAlignment = Alignment.Center,
+                    .padding(innerPadding)
+                    .semantics(mergeDescendants = true) {},
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
             ) {
                 CircularProgressIndicator()
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "本文を読み込み中…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             return@Scaffold
         }
 
         val chapterCharSum = state.parsedSections.sumOf { it.charCount }
         val estMinutes = max(1, (chapterCharSum / 500L).toInt())
+        val richColors = rememberRichTextColors()
 
         Box(
             modifier = Modifier
@@ -364,6 +392,7 @@ fun ReaderScreen(
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
+                    onClickLabel = if (state.chromeVisible) "ツールバーを隠す" else "ツールバーを表示する",
                     onClick = onToggleChrome,
                 ),
             contentAlignment = Alignment.TopCenter,
@@ -418,10 +447,20 @@ fun ReaderScreen(
                             key = "sec_title_${sec.sectionId}",
                             contentType = "section_title",
                         ) {
+                            val styledTitle = remember(sec.title, sec.format, richColors) {
+                                formatInlineRichText(
+                                    raw = "${sec.chapterNumber}.${sec.sectionNumber} ${sec.title}",
+                                    format = sec.format,
+                                    baseFontSize = 22.sp,
+                                    colors = richColors,
+                                )
+                            }
                             Text(
-                                text = "${sec.chapterNumber}.${sec.sectionNumber} ${sec.title}",
+                                text = styledTitle,
                                 style = MaterialTheme.typography.titleLarge,
-                                modifier = Modifier.padding(top = 10.dp),
+                                modifier = Modifier
+                                    .padding(top = 10.dp)
+                                    .semantics { heading() },
                             )
                         }
                     }
@@ -460,6 +499,40 @@ fun ReaderScreen(
                         }
                     }
                 }
+                if (chapters.size > 1) {
+                    item(
+                        key = "inline_chapter_footer",
+                        contentType = "chapter_footer",
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 20.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            HorizontalDivider(color = BookGenThemeExtras.colors.borderSubtle)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                OutlinedButton(
+                                    enabled = state.currentChapterIndex > 0,
+                                    onClick = { onSelectChapter(state.currentChapterIndex - 1) },
+                                    shape = BookGenRadius.Control,
+                                ) {
+                                    Text("← 前の章")
+                                }
+                                Button(
+                                    enabled = state.currentChapterIndex < chapters.lastIndex,
+                                    onClick = { onSelectChapter(state.currentChapterIndex + 1) },
+                                    shape = BookGenRadius.Control,
+                                ) {
+                                    Text("次の章 →")
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -472,6 +545,7 @@ fun ReaderScreen(
             TocBottomSheetContent(
                 chapters = chapters,
                 activeIndex = state.currentChapterIndex,
+                onDismiss = { showTocSheet = false },
                 onSelect = { idx ->
                     showTocSheet = false
                     onSelectChapter(idx)
@@ -487,6 +561,7 @@ fun ReaderScreen(
         ) {
             AppearanceBottomSheetContent(
                 state = state,
+                onDismiss = { showAppearanceSheet = false },
                 onThemeSelected = onThemeSelected,
                 onFontSelected = onFontSelected,
                 onFontSizeChanged = onFontSizeChanged,
@@ -503,6 +578,7 @@ fun ReaderScreen(
         ) {
             ExportBottomSheetContent(
                 exportState = state.exportState,
+                onDismiss = { showExportSheet = false },
                 onSelectFormat = onSelectExportFormat,
                 onToggleToc = onToggleIncludeToc,
                 onToggleIncomplete = onToggleIncludeIncomplete,
@@ -519,23 +595,42 @@ fun ReaderScreen(
 private fun TocBottomSheetContent(
     chapters: List<ChapterWithSections>,
     activeIndex: Int,
+    onDismiss: () -> Unit,
     onSelect: (Int) -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 12.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 8.dp)
             .navigationBarsPadding(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("目次", style = MaterialTheme.typography.titleMedium)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "目次 (${chapters.size}章)",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.semantics { heading() },
+            )
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Outlined.Close, contentDescription = "目次を閉じる")
+            }
+        }
         HorizontalDivider(color = BookGenThemeExtras.colors.borderSubtle)
         chapters.forEachIndexed { idx, ch ->
             val selected = idx == activeIndex
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onSelect(idx) },
+                    .clickable(
+                        role = Role.Button,
+                        onClickLabel = "第${ch.chapter.chapterNumber}章を開く",
+                        onClick = { onSelect(idx) },
+                    ),
                 shape = BookGenRadius.Control,
                 color = if (selected) {
                     MaterialTheme.colorScheme.primaryContainer
@@ -543,16 +638,41 @@ private fun TocBottomSheetContent(
                     MaterialTheme.colorScheme.surface
                 },
             ) {
-                Text(
-                    text = "第${ch.chapter.chapterNumber}章: ${ch.chapter.title}",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
+                Row(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                )
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                        Text(
+                            text = "第${ch.chapter.chapterNumber}章: ${ch.chapter.title}",
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                            ),
+                            color = if (selected) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                        )
+                        Text(
+                            text = "${ch.sections.size}節",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (selected) {
+                                MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+                    if (selected) {
+                        Icon(
+                            imageVector = Icons.Outlined.Check,
+                            contentDescription = "選択中",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
+                }
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -562,6 +682,7 @@ private fun TocBottomSheetContent(
 @Composable
 private fun AppearanceBottomSheetContent(
     state: ReaderUiState,
+    onDismiss: () -> Unit,
     onThemeSelected: (ThemePreference) -> Unit,
     onFontSelected: (ReaderFontChoice) -> Unit,
     onFontSizeChanged: (Float) -> Unit,
@@ -572,11 +693,25 @@ private fun AppearanceBottomSheetContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 8.dp)
             .navigationBarsPadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("表示カスタマイズ", style = MaterialTheme.typography.titleMedium)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "表示カスタマイズ",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.semantics { heading() },
+            )
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Outlined.Close, contentDescription = "表示設定を閉じる")
+            }
+        }
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
             listOf(
                 ThemePreference.LIGHT to "Light",
@@ -608,25 +743,46 @@ private fun AppearanceBottomSheetContent(
             }
         }
 
-        Text("文字サイズ: ${app.fontSizeSp.toInt()}sp", style = MaterialTheme.typography.labelLarge)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("文字サイズ", style = MaterialTheme.typography.labelLarge)
+            Text("${app.fontSizeSp.toInt()}sp", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        }
         Slider(
             value = app.fontSizeSp,
             onValueChange = onFontSizeChanged,
             valueRange = 14f..24f,
+            modifier = Modifier.semantics { contentDescription = "文字サイズスライダー ${app.fontSizeSp.toInt()}sp" },
         )
 
-        Text("行間: ${"%.2f".format(app.lineHeightMultiplier)}x", style = MaterialTheme.typography.labelLarge)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("行間", style = MaterialTheme.typography.labelLarge)
+            Text("${"%.2f".format(app.lineHeightMultiplier)}x", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        }
         Slider(
             value = app.lineHeightMultiplier,
             onValueChange = onLineHeightChanged,
             valueRange = 1.4f..2.1f,
+            modifier = Modifier.semantics { contentDescription = "行間スライダー ${"%.2f".format(app.lineHeightMultiplier)}倍" },
         )
 
-        Text("左右余白: ${app.horizontalPaddingDp}dp", style = MaterialTheme.typography.labelLarge)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("左右余白", style = MaterialTheme.typography.labelLarge)
+            Text("${app.horizontalPaddingDp}dp", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        }
         Slider(
             value = app.horizontalPaddingDp.toFloat(),
             onValueChange = { onPaddingChanged(it.toInt()) },
             valueRange = 12f..36f,
+            modifier = Modifier.semantics { contentDescription = "左右余白スライダー ${app.horizontalPaddingDp}dp" },
         )
         Spacer(Modifier.height(10.dp))
     }
@@ -635,6 +791,7 @@ private fun AppearanceBottomSheetContent(
 @Composable
 private fun ExportBottomSheetContent(
     exportState: ExportUiState,
+    onDismiss: () -> Unit,
     onSelectFormat: (ExportFormatType) -> Unit,
     onToggleToc: (Boolean) -> Unit,
     onToggleIncomplete: (Boolean) -> Unit,
@@ -646,11 +803,26 @@ private fun ExportBottomSheetContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 8.dp)
+            .imePadding()
             .navigationBarsPadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("書籍書き出し (Rust 高速ビルダー)", style = MaterialTheme.typography.titleMedium)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "書籍書き出し",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.semantics { heading() },
+            )
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Outlined.Close, contentDescription = "書き出しを閉じる")
+            }
+        }
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ExportFormatType.entries.chunked(2).forEach { rowFormats ->
@@ -672,23 +844,26 @@ private fun ExportBottomSheetContent(
         }
 
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(role = Role.Switch) { onToggleToc(!exportState.includeToc) }
+                .padding(vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("目次を含める", style = MaterialTheme.typography.bodyMedium)
-            Switch(checked = exportState.includeToc, onCheckedChange = onToggleToc)
+            Switch(checked = exportState.includeToc, onCheckedChange = null)
         }
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(role = Role.Switch) { onToggleIncomplete(!exportState.includeIncompleteNotice) }
+                .padding(vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("未完成節の注記を挿入", style = MaterialTheme.typography.bodyMedium)
-            Switch(
-                checked = exportState.includeIncompleteNotice,
-                onCheckedChange = onToggleIncomplete,
-            )
+            Switch(checked = exportState.includeIncompleteNotice, onCheckedChange = null)
         }
 
         if (exportState.isExporting) {

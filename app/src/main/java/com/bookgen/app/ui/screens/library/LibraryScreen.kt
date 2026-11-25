@@ -21,9 +21,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AutoStories
@@ -34,6 +37,7 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -63,9 +67,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -192,106 +203,143 @@ fun LibraryScreen(
             )
         },
     ) { innerPadding ->
-        LazyColumn(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .consumeWindowInsets(innerPadding),
-            contentPadding = PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
-                top = innerPadding.calculateTopPadding() + 4.dp,
-                bottom = innerPadding.calculateBottomPadding() + 92.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentAlignment = Alignment.TopCenter,
         ) {
-            item(key = "search_strip", contentType = "search_strip") {
-                SearchAndFilterStrip(
-                    query = state.searchQuery,
-                    activeFilter = state.activeFilter,
-                    isSearching = state.isSearching,
-                    onQueryChange = onSearchQueryChanged,
-                    onFilterSelected = onFilterSelected,
-                )
-            }
-
-            if (state.searchQuery.isNotBlank()) {
-                item(key = "search_heading", contentType = "section_heading") {
-                    Text(
-                        text = "全文検索結果 (${state.searchHits.size}件)",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 720.dp),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = innerPadding.calculateTopPadding() + 4.dp,
+                    bottom = innerPadding.calculateBottomPadding() + 92.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                item(key = "search_strip", contentType = "search_strip") {
+                    SearchAndFilterStrip(
+                        query = state.searchQuery,
+                        activeFilter = state.activeFilter,
+                        isSearching = state.isSearching,
+                        onQueryChange = onSearchQueryChanged,
+                        onFilterSelected = onFilterSelected,
                     )
                 }
-                if (state.searchHits.isEmpty() && !state.isSearching) {
-                    item(key = "search_empty", contentType = "empty_notice") {
+
+                if (state.searchQuery.isNotBlank()) {
+                    item(key = "search_heading", contentType = "section_heading") {
                         Text(
-                            text = "一致する本文・見出しが見つかりませんでした。",
-                            style = MaterialTheme.typography.bodyMedium,
+                            text = "全文検索結果 (${state.searchHits.size}件)",
+                            style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 12.dp),
+                            modifier = Modifier.semantics {
+                                heading()
+                                liveRegion = LiveRegionMode.Polite
+                            },
                         )
                     }
-                } else {
-                    items(
-                        items = state.searchHits,
-                        key = { "hit_${it.sectionId}" },
-                        contentType = { "search_hit" },
-                    ) { hit ->
-                        SearchHitRow(
-                            hit = hit,
-                            onClick = { onOpenReader(hit.bookId, (hit.chapterNumber - 1).coerceAtLeast(0)) },
-                        )
-                    }
-                }
-            } else {
-                if (state.heroBook != null) {
-                    item(key = "hero_card", contentType = "hero_card") {
-                        HeroResumeCard(
-                            book = state.heroBook,
-                            onResumeWorkspace = { onOpenWorkspace(state.heroBook.id) },
-                            onReadClick = { onOpenReader(state.heroBook.id, 0) },
-                        )
-                    }
-                }
-
-                item(key = "library_heading", contentType = "section_heading") {
-                    Text(
-                        text = "ライブラリ (${state.filteredBooks.size}冊)",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-
-                if (state.isLoading) {
-                    item(key = "loading", contentType = "loading") {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 32.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            CircularProgressIndicator()
+                    if (state.searchHits.isEmpty() && !state.isSearching) {
+                        item(key = "search_empty", contentType = "empty_notice") {
+                            EditorialCard(modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    text = "一致する本文・見出しが見つかりませんでした。",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(Modifier.height(10.dp))
+                                OutlinedButton(
+                                    onClick = { onSearchQueryChanged("") },
+                                    shape = BookGenRadius.Control,
+                                ) {
+                                    Text("検索をクリア")
+                                }
+                            }
+                        }
+                    } else {
+                        items(
+                            items = state.searchHits,
+                            key = { "hit_${it.sectionId}" },
+                            contentType = { "search_hit" },
+                        ) { hit ->
+                            SearchHitRow(
+                                hit = hit,
+                                onClick = { onOpenReader(hit.bookId, (hit.chapterNumber - 1).coerceAtLeast(0)) },
+                            )
                         }
                     }
-                } else if (state.filteredBooks.isEmpty()) {
-                    item(key = "empty_library", contentType = "empty_notice") {
-                        EmptyLibraryNotice(
-                            onCreateClick = onNewBookClick,
-                            onImportClick = { showImportDialog = true },
+                } else {
+                    if (state.heroBook != null) {
+                        item(key = "hero_card", contentType = "hero_card") {
+                            HeroResumeCard(
+                                book = state.heroBook,
+                                onResumeWorkspace = { onOpenWorkspace(state.heroBook.id) },
+                                onReadClick = { onOpenReader(state.heroBook.id, 0) },
+                            )
+                        }
+                    }
+
+                    item(key = "library_heading", contentType = "section_heading") {
+                        Text(
+                            text = "ライブラリ (${state.filteredBooks.size}冊)",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.semantics {
+                                heading()
+                                liveRegion = LiveRegionMode.Polite
+                            },
                         )
                     }
-                } else {
-                    items(
-                        items = state.filteredBooks,
-                        key = { it.id },
-                        contentType = { "book_row" },
-                    ) { book ->
-                        BookLibraryRow(
-                            book = book,
-                            onOpenWorkspace = { onOpenWorkspace(book.id) },
-                            onOpenReader = { onOpenReader(book.id, 0) },
-                            onRequestDelete = { deleteCandidate = book },
-                        )
+
+                    if (state.isLoading) {
+                        item(key = "loading", contentType = "loading") {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 32.dp)
+                                    .semantics(mergeDescendants = true) {},
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                CircularProgressIndicator()
+                                Text(
+                                    text = "ライブラリを読み込み中…",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    } else if (state.filteredBooks.isEmpty()) {
+                        item(key = "empty_library", contentType = "empty_notice") {
+                            if (state.books.isNotEmpty() && state.activeFilter != LibraryFilter.ALL) {
+                                FilteredEmptyNotice(
+                                    filterLabel = state.activeFilter.label,
+                                    onResetFilter = { onFilterSelected(LibraryFilter.ALL) },
+                                )
+                            } else {
+                                EmptyLibraryNotice(
+                                    onCreateClick = onNewBookClick,
+                                    onImportClick = { showImportDialog = true },
+                                )
+                            }
+                        }
+                    } else {
+                        items(
+                            items = state.filteredBooks,
+                            key = { it.id },
+                            contentType = { "book_row" },
+                        ) { book ->
+                            BookLibraryRow(
+                                book = book,
+                                onOpenWorkspace = { onOpenWorkspace(book.id) },
+                                onOpenReader = { onOpenReader(book.id, 0) },
+                                onRequestDelete = { deleteCandidate = book },
+                            )
+                        }
                     }
                 }
             }
@@ -339,6 +387,10 @@ fun LibraryScreen(
                         onDeleteBook(victim.id)
                         deleteCandidate = null
                     },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
                 ) {
                     Text("削除")
                 }
@@ -360,6 +412,7 @@ private fun SearchAndFilterStrip(
     onQueryChange: (String) -> Unit,
     onFilterSelected: (LibraryFilter) -> Unit,
 ) {
+    val focusManager = LocalFocusManager.current
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedTextField(
             value = query,
@@ -367,13 +420,20 @@ private fun SearchAndFilterStrip(
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             shape = BookGenRadius.Chip,
-            placeholder = { Text("書籍タイトル・章・本文をFTS5高速検索…") },
+            placeholder = { Text("書籍タイトル・章・本文を検索…") },
             leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
             trailingIcon = {
                 if (isSearching) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 } else if (query.isNotEmpty()) {
-                    IconButton(onClick = { onQueryChange("") }) {
+                    IconButton(
+                        onClick = {
+                            onQueryChange("")
+                            focusManager.clearFocus()
+                        },
+                    ) {
                         Icon(Icons.Outlined.Close, contentDescription = "検索をクリア")
                     }
                 }
@@ -473,7 +533,11 @@ private fun BookLibraryRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onOpenWorkspace)
+            .clickable(
+                role = Role.Button,
+                onClickLabel = "「${book.title}」のスタジオを開く",
+                onClick = onOpenWorkspace,
+            )
             .padding(vertical = 8.dp),
     ) {
         Row(
@@ -492,17 +556,18 @@ private fun BookLibraryRow(
                     emptyOrFailedCount = book.emptyOrFailedSections,
                 )
             }
-            Row {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 IconButton(onClick = onOpenReader) {
                     Icon(
                         imageVector = Icons.Outlined.AutoStories,
-                        contentDescription = "リーダーを開く",
+                        contentDescription = "「${book.title}」をリーダーで開く",
                     )
                 }
                 IconButton(onClick = onRequestDelete) {
                     Icon(
                         imageVector = Icons.Outlined.DeleteOutline,
-                        contentDescription = "削除",
+                        contentDescription = "「${book.title}」を削除",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -606,6 +671,29 @@ private fun EmptyLibraryNotice(
             OutlinedButton(onClick = onImportClick, shape = BookGenRadius.Control) {
                 Text("旧データ取込")
             }
+        }
+    }
+}
+
+@Composable
+private fun FilteredEmptyNotice(
+    filterLabel: String,
+    onResetFilter: () -> Unit,
+) {
+    EditorialCard(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "「$filterLabel」に一致する書籍はありません",
+            style = MaterialTheme.typography.titleSmall,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "フィルタを解除するとライブラリ内のすべての書籍が表示されます。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(onClick = onResetFilter, shape = BookGenRadius.Control) {
+            Text("すべて表示に戻す")
         }
     }
 }

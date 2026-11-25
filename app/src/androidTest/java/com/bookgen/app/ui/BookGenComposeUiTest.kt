@@ -258,9 +258,43 @@ class BookGenComposeUiTest {
         composeRule.onNodeWithText("÷ 4 = 0.5", substring = true).assertIsDisplayed()
         composeRule.onNodeWithText("数式").assertIsDisplayed()
         composeRule.onNodeWithText("pub fn ok() -> u32 { 42 }").assertIsDisplayed()
-        composeRule.onNodeWithText("書出し").performClick()
+        composeRule.onNodeWithContentDescription("書き出し").performClick()
         composeRule.onNodeWithText("EPUB を生成").performClick()
         assertTrue(exportStarted)
+    }
+
+    @Test
+    fun libraryFilteredEmptyStateOffersFilterResetAndWizardShowsInlineError() {
+        var resetFilter: com.bookgen.app.ui.screens.library.LibraryFilter? = null
+        composeRule.setContent {
+            BookGenTheme {
+                LibraryScreen(
+                    state = LibraryUiState(
+                        isLoading = false,
+                        books = listOf(sampleSummary()),
+                        filteredBooks = emptyList(),
+                        heroBook = null,
+                        activeFilter = com.bookgen.app.ui.screens.library.LibraryFilter.COMPLETED,
+                    ),
+                    currentTheme = ThemePreference.LIGHT,
+                    aiSettings = AiSettings(),
+                    onNewBookClick = {},
+                    onOpenWorkspace = {},
+                    onOpenReader = { _, _ -> },
+                    onFilterSelected = { resetFilter = it },
+                    onSearchQueryChanged = {},
+                    onDeleteBook = {},
+                    onImportDirectory = {},
+                    onThemeSelected = {},
+                    onSaveAiSettings = {},
+                    onClearAiKeys = {},
+                    onDismissMessages = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("すべて表示に戻す").assertIsDisplayed().performClick()
+        assertEquals(com.bookgen.app.ui.screens.library.LibraryFilter.ALL, resetFilter)
     }
 
     private fun sampleSummary() = BookSummary(
