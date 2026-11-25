@@ -24,6 +24,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.bookgen.app.BookGenApplication
 import com.bookgen.app.MainActivity
+import com.bookgen.app.R
 import com.bookgen.app.domain.model.MarkupFormat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -125,7 +126,8 @@ class BookGenerationWorker(
         val progress = completed.coerceIn(0, maxSteps)
 
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_PROGRESS)
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setSmallIcon(R.drawable.ic_stat_bookgen)
+            .setColor(0xFF1E3A5F.toInt())
             .setContentTitle("執筆中: $bookTitle ($progress/$maxSteps)")
             .setContentText(statusLabel)
             .setProgress(maxSteps, progress, total <= 0)
@@ -177,7 +179,8 @@ class BookGenerationWorker(
         }
 
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ALERTS)
-            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setSmallIcon(R.drawable.ic_stat_bookgen)
+            .setColor(0xFF1E3A5F.toInt())
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))

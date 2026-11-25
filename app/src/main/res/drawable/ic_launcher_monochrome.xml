@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Monochrome layer for Android 13+ Material You themed icons -->
+    <path
+        android:fillColor="#000000"
+        android:fillType="evenOdd"
+        android:pathData="M34.5,32.5L65.5,32.5A3.5,3.5 0,0 1,69 36L69,56.5L52,51.5L56,67.8L69,71.2A3.5,3.5 0,0 1,65.5 73L34.5,73A2,2 0,0 1,32.5 71L32.5,34.5A2,2 0,0 1,34.5 32.5Z
+                          M39.5,32.5L39.5,73L41,73L41,32.5Z
+                          M56.5,32.5L56.5,47.5L60,44.2L63.5,47.5L63.5,32.5Z
+                          M44.5,42.5L53,42.5A1.3,1.3 0,0 1,53 45.1L44.5,45.1A1.3,1.3 0,0 1,44.5 42.5Z
+                          M44.5,49.5L62.5,49.5A1.25,1.25 0,0 1,62.5 52L44.5,52A1.25,1.25 0,0 1,44.5 49.5Z" />
+    <path
+        android:fillColor="#000000"
+        android:fillType="evenOdd"
+        android:pathData="M53.8,54.3L66.6,58.5L70.8,66L76.6,71.8L71.3,77.1L65.5,71.3L58,67.1Z
+                          M61.5,61.8m-1.8,0a1.8,1.8 0,1 1,3.6 0a1.8,1.8 0,1 1,-3.6 0" />
+</vector>

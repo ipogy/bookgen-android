@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Deep fountain-pen Indigo Ink canvas (#1E3A5F) -->
+    <path
+        android:fillColor="#1E3A5F"
+        android:pathData="M0,0h108v108h-108z" />
+    <!-- Subtle editorial diagonal light wash -->
+    <path
+        android:fillColor="#274A76"
+        android:pathData="M0,0L108,0L0,76Z" />
+    <!-- Subtle bottom depth fold -->
+    <path
+        android:fillColor="#152B47"
+        android:pathData="M108,108L108,38L26,108Z" />
+</vector>

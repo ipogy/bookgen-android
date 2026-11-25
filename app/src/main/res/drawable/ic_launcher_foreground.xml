@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Back page depth edge (fits cleanly inside r <= 30dp adaptive safe zone) -->
+    <path
+        android:fillColor="#8FAFE0"
+        android:pathData="M36,36L68.5,36A3.5,3.5 0,0 1,72 39.5L72,72.5A3.5,3.5 0,0 1,68.5 76L36,76A2.5,2.5 0,0 1,33.5 73.5L33.5,38.5A2.5,2.5 0,0 1,36 36Z" />
+
+    <!-- Main Alabaster paper book folio -->
+    <path
+        android:fillColor="#FAF8F5"
+        android:pathData="M34.5,32.5L65.5,32.5A3.5,3.5 0,0 1,69 36L69,69.5A3.5,3.5 0,0 1,65.5 73L34.5,73A2,2 0,0 1,32.5 71L32.5,34.5A2,2 0,0 1,34.5 32.5Z" />
+
+    <!-- Soft indigo-tinted book spine panel -->
+    <path
+        android:fillColor="#D6E3F4"
+        android:pathData="M34.5,32.5L39.5,32.5L39.5,73L34.5,73A2,2 0,0 1,32.5 71L32.5,34.5A2,2 0,0 1,34.5 32.5Z" />
+
+    <!-- Subtle spine crease line -->
+    <path
+        android:fillColor="#9EC2F0"
+        android:pathData="M39.5,32.5L40.8,32.5L40.8,73L39.5,73Z" />
+
+    <!-- Terracotta editorial bookmark ribbon with dovetail notch -->
+    <path
+        android:fillColor="#C45735"
+        android:pathData="M56.5,32.5L63.5,32.5L63.5,47.5L60,44.2L56.5,47.5Z" />
+
+    <!-- Manuscript ruled typography bars -->
+    <path
+        android:fillColor="#1E3A5F"
+        android:pathData="M44.5,42.5L53,42.5A1.3,1.3 0,0 1,53 45.1L44.5,45.1A1.3,1.3 0,0 1,44.5 42.5Z" />
+    <path
+        android:fillColor="#4A6485"
+        android:pathData="M44.5,49.5L62.5,49.5A1.25,1.25 0,0 1,62.5 52L44.5,52A1.25,1.25 0,0 1,44.5 49.5Z" />
+    <path
+        android:fillColor="#4A6485"
+        android:pathData="M44.5,56L56.5,56A1.25,1.25 0,0 1,56.5 58.5L44.5,58.5A1.25,1.25 0,0 1,44.5 56Z" />
+
+    <!-- Separation halo under fountain pen nib -->
+    <path
+        android:fillColor="#1E3A5F"
+        android:pathData="M52,52.5L68.2,57.2L73,66.5L66,73.5L56.7,68.7Z" />
+
+    <!-- Fountain pen metallic terracotta nib body -->
+    <path
+        android:fillColor="#D96B43"
+        android:pathData="M53.8,54.3L66.6,58.5L70.8,66L65.5,71.3L58,67.1Z" />
+
+    <!-- Light alabaster highlight bevel on top facet of nib -->
+    <path
+        android:fillColor="#F6DDD4"
+        android:pathData="M53.8,54.3L66.6,58.5L63.8,64.3Z" />
+
+    <!-- Nib ink slit and breather dot -->
+    <path
+        android:fillColor="#1E3A5F"
+        android:pathData="M61.5,61.8m-1.8,0a1.8,1.8 0,1 1,3.6 0a1.8,1.8 0,1 1,-3.6 0" />
+    <path
+        android:pathData="M54.5,55L61.5,61.8"
+        android:strokeWidth="1.35"
+        android:strokeColor="#1E3A5F"
+        android:strokeLineCap="round" />
+
+    <!-- Pen collar / ferrule -->
+    <path
+        android:fillColor="#142844"
+        android:pathData="M65.5,71.3L70.8,66L76.6,71.8L71.3,77.1Z" />
+    <path
+        android:fillColor="#9EC2F0"
+        android:pathData="M66.1,70.7L70.2,66.6L71.9,68.3L67.8,72.4Z" />
+</vector>

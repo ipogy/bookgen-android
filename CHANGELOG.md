@@ -5,6 +5,11 @@ All notable changes to `bookgen-android` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-11-25
+
+### Added
+- **Editorial Adaptive & Legacy App Icons**: Added `Co-Author Studio` custom vector adaptive launcher icon (`mipmap-anydpi-v26/ic_launcher.xml`, `ic_launcher_round.xml`, `ic_launcher_background.xml`, `ic_launcher_foreground.xml`), Android 13+ monochrome themed icon layer (`ic_launcher_monochrome.xml`), legacy density mipmap PNGs (`mdpi`–`xxxhdpi`), custom notification small icon (`ic_stat_bookgen.xml`), and wired `android:icon` / `android:roundIcon` in `AndroidManifest.xml`.
+
 ## [0.2.0] - 2026-11-25
 
 ### Changed
